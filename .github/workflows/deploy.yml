@@ -1,0 +1,43 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main # Ou sua branch principal, ex: master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Necessário para fazer push para a branch gh-pages
+      pages: write    # Necessário para implantar no GitHub Pages
+      id-token: write # Necessário para OIDC (se você usar para autenticação)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Use uma versão LTS do Node.js
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # Usa o segredo do repositório
+          GITHUB_ACTIONS: 'true' # Sinaliza para vite.config.ts
+          # GITHUB_REPOSITORY é fornecido automaticamente pelo GitHub Actions
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist # O diretório que o Vite constrói
+          # publish_branch: gh-pages # O padrão já é gh-pages, então é opcional
+          # user_name: 'github-actions[bot]' # Opcional
+          # user_email: 'github-actions[bot]@users.noreply.github.com' # Opcional
+          # cname: your.custom.domain.com # Descomente se você tiver um domínio personalizado
