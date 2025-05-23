@@ -1,11 +1,7 @@
 import { useRef, useCallback, useEffect } from "react";
 import { useLogoStore } from "../store/logoStore";
 import { ViewBox } from "../types";
-
-function viewBoxToString(vb: ViewBox | null): string {
-  if (!vb) return "0 0 100 100";
-  return `${vb.x} ${vb.y} ${vb.width} ${vb.height}`;
-}
+import ViewBoxManager from '../services/ViewBoxManager';
 
 interface UseZoomPanOptions {
   minZoom?: number;
@@ -38,23 +34,25 @@ export default function useZoomPan(
     (e: React.WheelEvent<SVGSVGElement>) => {
       if (!svgRef.current || !currentViewBox) return;
       e.preventDefault();
-      const direction = e.deltaY < 0 ? 1 + zoomFactor : 1 - zoomFactor;
-      let newZoom = Math.max(minZoom, Math.min(maxZoom, zoomLevel * direction));
+      
       const rect = svgRef.current.getBoundingClientRect();
-      const mouseX = ((e.clientX - rect.left) / rect.width) * currentViewBox.width + currentViewBox.x;
-      const mouseY = ((e.clientY - rect.top) / rect.height) * currentViewBox.height + currentViewBox.y;
-      const newWidth = currentViewBox.width / direction;
-      const newHeight = currentViewBox.height / direction;
-      const relX = (mouseX - currentViewBox.x) / currentViewBox.width;
-      const relY = (mouseY - currentViewBox.y) / currentViewBox.height;
-      const newX = mouseX - relX * newWidth;
-      const newY = mouseY - relY * newHeight;
-      setCurrentViewBox({
-        x: newX,
-        y: newY,
-        width: newWidth,
-        height: newHeight,
-      });
+      const { x: mouseX, y: mouseY } = ViewBoxManager.clientToSVGCoordinates(
+        e.clientX,
+        e.clientY,
+        rect,
+        currentViewBox
+      );
+
+      const zoomDirection = e.deltaY < 0 ? 'in' : 'out';
+      const newViewBox = ViewBoxManager.zoom(currentViewBox, zoomDirection, { x: mouseX, y: mouseY }, zoomFactor);
+      
+      // Calculate newZoom based on the change in width/height, consistent with how ViewBoxManager.zoom might change it.
+      // This assumes zoomFactor is applied directly to width/height in ViewBoxManager.zoom
+      // For a more robust approach, consider if ViewBoxManager should also return the new zoom level or scale factor.
+      const newZoomFactor = e.deltaY < 0 ? 1 + zoomFactor : 1 - zoomFactor;
+      let newZoom = Math.max(minZoom, Math.min(maxZoom, zoomLevel * newZoomFactor));
+      
+      setCurrentViewBox(newViewBox);
       setZoomLevel(newZoom);
     },
     [svgRef, currentViewBox, zoomLevel, minZoom, maxZoom, zoomFactor, setCurrentViewBox, setZoomLevel]
@@ -75,16 +73,17 @@ export default function useZoomPan(
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<SVGSVGElement>) => {
       if (!isPanning.current || !svgRef.current || !currentViewBox) return;
+      
       const dx = e.clientX - lastMouse.current.x;
       const dy = e.clientY - lastMouse.current.y;
+      
       const rect = svgRef.current.getBoundingClientRect();
-      const scaleX = currentViewBox.width / rect.width;
-      const scaleY = currentViewBox.height / rect.height;
-      setCurrentViewBox({
-        ...currentViewBox,
-        x: currentViewBox.x - dx * scaleX,
-        y: currentViewBox.y - dy * scaleY,
-      });
+      const scaledDx = dx * (currentViewBox.width / rect.width);
+      const scaledDy = dy * (currentViewBox.height / rect.height);
+      
+      const newViewBox = ViewBoxManager.pan(currentViewBox, scaledDx, scaledDy);
+      
+      setCurrentViewBox(newViewBox);
       lastMouse.current = { x: e.clientX, y: e.clientY };
     },
     [svgRef, currentViewBox, setCurrentViewBox]
@@ -107,14 +106,15 @@ export default function useZoomPan(
   }, [handleMouseUp]);
 
   const resetView = useCallback(() => {
-    setCurrentViewBox({ x: 0, y: 0, width: 100, height: 100 });
+    const defaultViewBox = ViewBoxManager.createDefault();
+    setCurrentViewBox(defaultViewBox);
     setZoomLevel(1);
   }, [setCurrentViewBox, setZoomLevel]);
 
   // Attach React event handlers (not native DOM listeners)
   return {
     svgRef,
-    viewBox: viewBoxToString(currentViewBox),
+    viewBox: ViewBoxManager.toString(currentViewBox),
     zoomLevel,
     handleWheel,
     handleMouseDown,

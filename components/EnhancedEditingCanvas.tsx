@@ -186,7 +186,18 @@ const SelectionHighlight: React.FC<SelectionHighlightProps> = ({ svgRef, selecte
         }
       } catch (err) {
         console.error('Error updating selection highlight:', err);
+        // Optionally reset highlight on error too
+        const highlight = highlightRef.current;
+        highlight.setAttribute('width', '0');
+        highlight.setAttribute('height', '0');
+        highlight.removeAttribute('transform');
       }
+    } else {
+      // Element not found, reset/hide highlight
+      const highlight = highlightRef.current;
+      highlight.setAttribute('width', '0');
+      highlight.setAttribute('height', '0');
+      highlight.removeAttribute('transform');
     }
   }, [selectedElementId, svgRef]);
 
