@@ -11,6 +11,56 @@ export class ViewBoxManager {
    * @param viewBoxStr ViewBox string in format "x y width height"
    * @returns ViewBox object or null if invalid string
    */
+  private static lastStableViewBox: ViewBox | null = null;
+  
+  /**
+   * Creates a stable ViewBox that prevents rapid oscillations
+   * @param newViewBox The newly calculated ViewBox
+   * @param threshold Minimum change threshold to update (default 5%)
+   * @returns Stabilized ViewBox
+   */
+  static getStableViewBox(newViewBox: ViewBox | null, threshold: number = 0.05): ViewBox | null {
+    if (!newViewBox) return this.lastStableViewBox;
+    
+    if (!this.lastStableViewBox) {
+      this.lastStableViewBox = { ...newViewBox };
+      return this.lastStableViewBox;
+    }
+    
+    // Calculate percentage change in dimensions
+    const widthChange = Math.abs((newViewBox.width - this.lastStableViewBox.width) / Math.max(1, this.lastStableViewBox.width));
+    const heightChange = Math.abs((newViewBox.height - this.lastStableViewBox.height) / Math.max(1, this.lastStableViewBox.height));
+    
+    // For x and y positions, handle potential zero positions
+    const lastX = Math.abs(this.lastStableViewBox.x) < 0.1 ? 1 : this.lastStableViewBox.x;
+    const lastY = Math.abs(this.lastStableViewBox.y) < 0.1 ? 1 : this.lastStableViewBox.y;
+    
+    const xChange = Math.abs((newViewBox.x - this.lastStableViewBox.x) / Math.max(1, Math.abs(lastX)));
+    const yChange = Math.abs((newViewBox.y - this.lastStableViewBox.y) / Math.max(1, Math.abs(lastY)));
+    
+    console.log('ViewBox changes:', { widthChange, heightChange, xChange, yChange, threshold });
+    
+    // Only update if changes exceed the threshold, or if maintaining the same aspect ratio
+    if (widthChange > threshold || heightChange > threshold || xChange > threshold || yChange > threshold) {
+      // Create a new object to prevent reference issues
+      this.lastStableViewBox = { 
+        x: newViewBox.x,
+        y: newViewBox.y, 
+        width: newViewBox.width, 
+        height: newViewBox.height 
+      };
+      return this.lastStableViewBox;
+    }
+    
+    // Otherwise keep the last stable viewBox
+    return this.lastStableViewBox;
+  }
+  
+  /**
+   * Creates a ViewBox object from a string definition
+   * @param viewBoxStr ViewBox string in format "x y width height"
+   * @returns ViewBox object or null if invalid string
+   */
   static parseViewBoxString(viewBoxStr: string | null): ViewBox | null {
     if (!viewBoxStr) return null;
     

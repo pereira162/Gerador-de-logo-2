@@ -1,6 +1,5 @@
-
-import { SVGElementProperties, TextProperties, PALETTE_CLASS_MAP, ColorPalette } from '../types';
-import { SVG_EDITABLE_CLASS, DEFAULT_FILL_COLOR, DEFAULT_STROKE_COLOR } from '../constants';
+import { SVGElementProperties, TextProperties, ColorPalette } from '../types';
+import { SVG_EDITABLE_CLASS, DEFAULT_FILL_COLOR } from '../constants';
 
 // Helper to parse transform string; very basic, assumes order or specific formats.
 // A robust solution would use regex or a micro-parser.
@@ -137,10 +136,21 @@ export const addTextElementsToSvg = (svgString: string, textElementsConfig: Text
     if (!config.content.trim()) return; // Don't add empty text
 
     const textEl = doc.createElementNS("http://www.w3.org/2000/svg", "text");
-    textEl.setAttribute('x', `${config.x}%`); // Use percentage for responsiveness within viewBox
-    textEl.setAttribute('y', `${config.y}%`);
+    
+    // Calculate absolute coordinates based on percentage values and viewBox dimensions
+    const absX = viewBox.x + (viewBox.width * config.x / 100);
+    const absY = viewBox.y + (viewBox.height * config.y / 100);
+    
+    textEl.setAttribute('x', String(absX));
+    textEl.setAttribute('y', String(absY));
     textEl.setAttribute('font-family', config.fontFamily);
-    textEl.setAttribute('font-size', String(config.fontSize * (viewBox.width / 100) * 0.3)); // Scale font size relative to viewBox
+    
+    // Better font size scaling based on viewBox dimensions
+    // Using a smaller coefficient (0.15) to avoid excessive scaling
+    const scaleFactor = Math.min(viewBox.width, viewBox.height) / 100;
+    const fontSize = config.fontSize * scaleFactor * 0.15;
+    textEl.setAttribute('font-size', String(fontSize));
+    
     textEl.setAttribute('fill', config.fill);
     textEl.setAttribute('text-anchor', config.textAnchor);
     textEl.classList.add('logo-text-element'); // Mark as added text

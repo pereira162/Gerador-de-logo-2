@@ -1,8 +1,7 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { useLogoStore } from '../store/logoStore';
 import { SVG_EDITABLE_CLASS } from '../constants';
-import { applyTempHighlightToSvgElement, removeTempHighlightFromSvgElement } from '../utils/svgUtils';
+import { applyTempHighlightToSvgElement } from '../utils/svgUtils';
 
 
 interface EditingCanvasProps {

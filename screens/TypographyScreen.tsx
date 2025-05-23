@@ -1,10 +1,90 @@
-
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useLogoStore } from '../store/logoStore';
 import { Screen, TextProperties } from '../types';
 import { DEFAULT_FONTS, MIN_FONT_SIZE, MAX_FONT_SIZE } from '../constants';
+import { ViewBoxManager } from '../services/ViewBoxManager';
 import ColorPicker from '../components/ColorPicker';
-import EditingCanvas from '../components/EditingCanvas'; // For preview
+import useZoomPan from '../hooks/useZoomPan';
+
+/**
+ * Função utilitária melhorada para calcular de forma estável o bounding box de todo o conteúdo SVG (ícone + textos)
+ * com margem de segurança para evitar cortes.
+ */
+function getFullContentBoundsForTypography(svg: SVGSVGElement, margem: number = 32) {
+  // Primeiro tentamos pegar todas as dimensões exatas
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  // Forçamos um reflow para garantir que todas as dimensões estejam calculadas
+  svg.getBoundingClientRect();
+  
+  // 1. Primeiro, vamos processar o grupo que contém o ícone (dangerouslySetInnerHTML)
+  const iconGroup = svg.querySelector('g');
+  if (iconGroup) {
+    try {
+      const iconBBox = iconGroup.getBBox();
+      if (iconBBox && iconBBox.width > 0 && iconBBox.height > 0) {
+        console.log("Icon BBox:", iconBBox);
+        minX = Math.min(minX, iconBBox.x);
+        minY = Math.min(minY, iconBBox.y);
+        maxX = Math.max(maxX, iconBBox.x + iconBBox.width);
+        maxY = Math.max(maxY, iconBBox.y + iconBBox.height);
+      }
+    } catch (e) {
+      console.error("Error getting icon BBox:", e);
+    }
+  }
+  
+  // 2. Agora processamos todos os elementos SVG, com tratamento especial para textos
+  const allElements = Array.from(svg.querySelectorAll('*'));
+  
+  allElements.forEach(el => {
+    // Ignora elementos sem representação visual ou já processados como grupo
+    if (el.tagName === 'defs' || el.tagName === 'style' || el === iconGroup) return;
+    
+    try {
+      // Para textos, usamos uma abordagem especial que captura melhor as dimensões
+      if (el.tagName === 'text') {
+        const bbox = (el as SVGGraphicsElement).getBBox?.();
+        if (bbox && bbox.width > 0 && bbox.height > 0) {
+          // Adicionamos uma margem extra para textos, que costumam ter problemas de dimensionamento
+          const textPadding = 4; // Pequeno padding extra para textos
+          minX = Math.min(minX, bbox.x - textPadding);
+          minY = Math.min(minY, bbox.y - textPadding);
+          maxX = Math.max(maxX, bbox.x + bbox.width + textPadding);
+          maxY = Math.max(maxY, bbox.y + bbox.height + textPadding);
+          console.log(`Text element BBox (${(el as SVGTextElement).textContent}):`, bbox);
+        }
+      } else if ((el as SVGGraphicsElement).getBBox) {
+        // Para outros elementos SVG, usamos getBBox normalmente
+        const bbox = (el as SVGGraphicsElement).getBBox?.();
+        if (bbox && bbox.width > 0 && bbox.height > 0) {
+          minX = Math.min(minX, bbox.x);
+          minY = Math.min(minY, bbox.y);
+          maxX = Math.max(maxX, bbox.x + bbox.width);
+          maxY = Math.max(maxY, bbox.y + bbox.height);
+        }
+      }
+    } catch (e) {
+      // Ignora erros de elementos sem getBBox
+    }
+  });
+  
+  // fallback em caso de erro
+  if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    console.log("Using fallback viewBox");
+    return '0 0 400 100';
+  }
+  
+  // Adiciona margem de segurança
+  const padding = margem;
+  const x = minX - padding;
+  const y = minY - padding;
+  const w = (maxX - minX) + 2 * padding;
+  const h = (maxY - minY) + 2 * padding;
+  
+  console.log("Final calculated viewBox:", { x, y, w, h });
+  return `${x} ${y} ${w} ${h}`;
+}
 
 const TextPropertyControls: React.FC<{
   textType: 'companyName' | 'tagline';
@@ -113,8 +193,10 @@ export const ErrorBoundary: React.FC<{children: React.ReactNode}> = ({ children 
   return <>{children}</>;
 };
 
+const MARGEM = 32;
+
 const TypographyScreen: React.FC = () => {
-    // Optimize store selection to prevent excessive re-renders
+  // Optimize store selection to prevent excessive re-renders
   // Use individual selectors with custom equality checks
   const updateTextProperty = useLogoStore(state => state.updateTextProperty);
   const setTaglineEnabled = useLogoStore(state => state.setTaglineEnabled);
@@ -157,41 +239,119 @@ const TypographyScreen: React.FC = () => {
     }
   );
   
-  const getFinalSvgForExport = useLogoStore(state => state.getFinalSvgForExport);
+  const editedIconSvg = useLogoStore(state => state.editedIconSvg);
 
-  // Cache the SVG preview with useMemo to prevent infinite renders
-  // Use specific dependencies rather than whole objects
-  const finalSvgPreview = React.useMemo(() => {
-    try {
-      return getFinalSvgForExport();
-    } catch (error) {
-      console.error('Error generating SVG preview:', error);
-      return '<svg width="200" height="200" viewBox="0 0 100 100"><text x="50" y="50" text-anchor="middle" fill="red">Error rendering preview</text></svg>';
+  // Função utilitária para extrair apenas o conteúdo interno do SVG (sem a tag <svg>)
+  function getSvgInnerContent(svgString: string | null): string {
+    if (!svgString) return '';
+    const match = svgString.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+    return match ? match[1] : svgString;
+  }
+
+  const svgRef = useRef<SVGSVGElement>(null);
+  const { viewBox, resetView, handleWheel, handleMouseDown, handleMouseMove, handleMouseUp, handleMouseEnter } = useZoomPan(svgRef, { minZoom: 0.2, maxZoom: 4 });
+
+  // --- ATUALIZADO: Ajuste automático e estável do viewBox para englobar todo o texto + ícone ---
+  useEffect(() => {
+    if (svgRef.current) {
+      // Log to debug if icon is present
+      console.log("Current editedIconSvg:", editedIconSvg ? "Present" : "Not present");
+      
+      // Adicionamos um pequeno timeout para garantir que os textos e ícone foram renderizados completamente
+      const timeoutId = setTimeout(() => {
+        if (svgRef.current) {
+          // Usamos nossa função melhorada para cálculo preciso do viewBox
+          const vb = getFullContentBoundsForTypography(svgRef.current, MARGEM);
+          if (vb) {
+            console.log("Calculated viewBox:", vb);
+            
+            // Parse viewBox string to ViewBox object
+            const viewBoxObj = ViewBoxManager.parseViewBoxString(vb);
+            if (viewBoxObj) {
+              // Use ViewBoxManager's stabilization to prevent jitter
+              const stableViewBox = ViewBoxManager.getStableViewBox(viewBoxObj, 0.03) || viewBoxObj;
+              
+              // Don't set viewBox directly on the SVG element - let useZoomPan handle it
+              // Update the store with the stable viewBox for consistency
+              useLogoStore.getState().setCurrentViewBox(stableViewBox);
+            }
+          }
+        }
+      }, 100); // Slightly longer delay for better rendering assurance
+      
+      return () => clearTimeout(timeoutId);
     }
   }, [
     companyName?.content,
     companyName?.fontFamily,
     companyName?.fontSize,
-    companyName?.fill,
-    companyName?.textAnchor,
     companyName?.x,
     companyName?.y,
     tagline?.content,
     tagline?.fontFamily,
     tagline?.fontSize,
-    tagline?.fill,
-    tagline?.textAnchor,
     tagline?.x,
     tagline?.y,
+    editedIconSvg, // Make sure this dependency is included
+    MARGEM
   ]);
-
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 md:gap-6 h-[calc(100vh-200px)] min-h-[600px] animate-fadeIn">
       <div className="lg:w-2/5 xl:w-1/2 flex flex-col space-y-4">
         <h2 className="text-3xl font-semibold text-center text-emerald-400 mb-2">Add Your Text</h2>
         <div className="flex-grow bg-slate-700 p-2 rounded-lg shadow-inner">
-            <EditingCanvas svgContent={finalSvgPreview} className="w-full max-h-[400px] md:max-h-[350px] object-contain"/>
+          {/* --- SVG flexível com pan/zoom, renderizando ícone + textos --- */}
+          <svg
+            ref={svgRef}
+            viewBox={viewBox}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseEnter={handleMouseEnter}
+            style={{ background: "#fff", borderRadius: 8, touchAction: "none" }}
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            {/* Renderiza o SVG do ícone editado (sem a tag <svg>) */}
+            {editedIconSvg && (
+              <g dangerouslySetInnerHTML={{ __html: getSvgInnerContent(editedIconSvg) }} />
+            )}
+            {/* Company Name */}
+            {companyName && companyName.content && (
+              <text
+                x={companyName.x}
+                y={companyName.y}
+                fontFamily={companyName.fontFamily}
+                fontSize={companyName.fontSize}
+                fill={companyName.fill}
+                textAnchor={companyName.textAnchor}
+                id="typography-companyName"
+              >
+                {companyName.content}
+              </text>
+            )}
+            {/* Tagline */}
+            {tagline && tagline.content && (
+              <text
+                x={tagline.x}
+                y={tagline.y}
+                fontFamily={tagline.fontFamily}
+                fontSize={tagline.fontSize}
+                fill={tagline.fill}
+                textAnchor={tagline.textAnchor}
+                id="typography-tagline"
+              >
+                {tagline.content}
+              </text>
+            )}
+          </svg>
+          <button
+            onClick={() => resetView()}
+            className="mt-2 px-4 py-1 bg-slate-600 hover:bg-slate-500 text-white rounded"
+          >
+            Resetar Zoom/Pan
+          </button>
         </div>
       </div>
 
@@ -213,7 +373,7 @@ const TypographyScreen: React.FC = () => {
           )}
         </div>
       </div>
-      
+
       <div className="w-full lg:col-span-full flex justify-between mt-4 items-center">
         <div>
           <button
@@ -230,8 +390,7 @@ const TypographyScreen: React.FC = () => {
             Next: Export Logo &rarr;
         </button>
       </div>
-      {/* Fix: Removed non-standard 'jsx' and 'global' attributes from style tag. Standard CSS-in-JS or a global CSS file is preferred for styles. */}
-       <style>{`
+      <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
@@ -242,4 +401,62 @@ const TypographyScreen: React.FC = () => {
   );
 };
 
+
+
 export default TypographyScreen;
+
+/**
+ * Calcula um viewBox que engloba todo o texto SVG de forma robusta e com margem extra.
+ * Esta função é usada para exportação e é consistente com as funções de exportação.
+ */
+export function getDynamicViewBoxForTypography(svg: SVGSVGElement, margem: number = 32): string {
+  // Primeiro consideramos todos os textos
+  const textos = svg.querySelectorAll("text");
+  if (textos.length === 0) return "0 0 400 100";
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  // Forçamos reflow para garantir que as dimensões estão atualizadas
+  svg.getBoundingClientRect();
+  
+  // Processamos cada texto
+  textos.forEach(text => {
+    try {
+      const bbox = text.getBBox();
+      if (bbox && bbox.width > 0 && bbox.height > 0) {
+        // Adicionamos uma margem extra específica para textos
+        const textPadding = 4;
+        minX = Math.min(minX, bbox.x - textPadding);
+        minY = Math.min(minY, bbox.y - textPadding);
+        maxX = Math.max(maxX, bbox.x + bbox.width + textPadding);
+        maxY = Math.max(maxY, bbox.y + bbox.height + textPadding);
+      }
+    } catch {}
+  });
+  
+  // Também consideramos outros elementos SVG para o caso de ícones
+  const otherElements = svg.querySelectorAll("*:not(text):not(defs):not(style)");
+  otherElements.forEach(el => {
+    try {
+      const bbox = (el as SVGGraphicsElement).getBBox?.();
+      if (bbox && bbox.width > 0 && bbox.height > 0) {
+        minX = Math.min(minX, bbox.x);
+        minY = Math.min(minY, bbox.y);
+        maxX = Math.max(maxX, bbox.x + bbox.width);
+        maxY = Math.max(maxY, bbox.y + bbox.height);
+      }
+    } catch {}
+  });
+
+  if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    return "0 0 400 100";
+  }
+  
+  // Adicionamos margem de segurança final
+  const x = minX - margem;
+  const y = minY - margem;
+  const w = (maxX - minX) + 2 * margem;
+  const h = (maxY - minY) + 2 * margem;
+  
+  return `${x} ${y} ${w} ${h}`;
+}

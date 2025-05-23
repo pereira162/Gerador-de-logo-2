@@ -5,7 +5,6 @@ import { Screen } from '../types';
 import { EXPORT_RESOLUTIONS, DEFAULT_SVG_EXPORT_WIDTH, DEFAULT_SVG_EXPORT_HEIGHT } from '../constants';
 import EditingCanvas from '../components/EditingCanvas';
 import { downloadSVG, downloadPNG } from '../utils/exportUtils';
-import { getViewBox } from '../utils/svgUtils';
 
 const ExportScreen: React.FC = () => {
   const { getFinalSvgForExport, setScreen } = useLogoStore(state => ({
@@ -25,10 +24,9 @@ const ExportScreen: React.FC = () => {
 
   const handleExportPNG = () => {
     if (finalSvg) {
-      const viewBox = getViewBox(finalSvg) || { x:0, y:0, width: DEFAULT_SVG_EXPORT_WIDTH, height: DEFAULT_SVG_EXPORT_HEIGHT };
-      const baseWidth = viewBox.width;
-      const baseHeight = viewBox.height;
-      downloadPNG(finalSvg, `${filename}.png`, selectedResolution.value, baseWidth, baseHeight);
+      // Usaremos os cálculos aprimorados de exportUtils para garantir 
+      // que as dimensões de exportação englobem todo o conteúdo corretamente
+      downloadPNG(finalSvg, `${filename}.png`, selectedResolution.value);
     }
   };
 
