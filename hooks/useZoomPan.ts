@@ -1,7 +1,11 @@
-import { useState, useRef, useCallback, useEffect } from "react";
-import { ViewBox } from "../types";
-import { ViewBoxManager } from "../services/ViewBoxManager";
+import { useRef, useCallback, useEffect } from "react";
 import { useLogoStore } from "../store/logoStore";
+import { ViewBox } from "../types";
+
+function viewBoxToString(vb: ViewBox | null): string {
+  if (!vb) return "0 0 100 100";
+  return `${vb.x} ${vb.y} ${vb.width} ${vb.height}`;
+}
 
 interface UseZoomPanOptions {
   minZoom?: number;
@@ -12,157 +16,111 @@ interface UseZoomPanOptions {
 /**
  * Custom hook for handling zoom and pan interactions with an SVG element
  */
-export function useZoomPan({ 
-  minZoom = 0.1,
-  maxZoom = 10, 
-  zoomFactor = 0.1
-}: UseZoomPanOptions = {}) {
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const isDragging = useRef(false);
-  const lastMousePosition = useRef({ x: 0, y: 0 });
-  
-  // Get state from store
-  const currentViewBox = useLogoStore(state => state.currentViewBox);
-  const zoomLevel = useLogoStore(state => state.zoomLevel);
-  const setCurrentViewBox = useLogoStore(state => state.setCurrentViewBox);
-  const setZoomLevel = useLogoStore(state => state.setZoomLevel);
-  const resetViewToDefault = useLogoStore(state => state.resetViewToDefault);
+export default function useZoomPan(
+  svgRef: React.RefObject<SVGSVGElement>,
+  {
+    minZoom = 0.1,
+    maxZoom = 10,
+    zoomFactor = 0.1,
+  }: UseZoomPanOptions = {}
+) {
+  const currentViewBox = useLogoStore((s) => s.currentViewBox);
+  const zoomLevel = useLogoStore((s) => s.zoomLevel);
+  // Funções de atualização do Zustand (sempre disponíveis)
+  const setCurrentViewBox = useLogoStore((s) => s.setCurrentViewBox);
+  const setZoomLevel = useLogoStore((s) => s.setZoomLevel);
 
-  // Initialize viewBox if not yet set
-  useEffect(() => {
-    if (!currentViewBox && svgRef.current) {
-      const viewBoxStr = svgRef.current.getAttribute("viewBox");
-      const initialViewBox = ViewBoxManager.parseViewBoxString(viewBoxStr) || 
-                           ViewBoxManager.createDefault();
-      setCurrentViewBox(initialViewBox);
-    }
-  }, [currentViewBox, setCurrentViewBox]);
+  const isPanning = useRef(false);
+  const lastMouse = useRef({ x: 0, y: 0 });
 
   // Handle mouse wheel for zooming
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    
-    if (!svgRef.current || !currentViewBox) return;
-    
-    // Calculate zoom direction and factor
-    const delta = e.deltaY < 0 ? 1 + zoomFactor : 1 - zoomFactor;
-    const newZoomLevel = Math.max(minZoom, Math.min(maxZoom, zoomLevel * delta));
-    
-    // Get mouse position in SVG coordinates
-    const zoomPoint = ViewBoxManager.clientToSVGCoordinates(
-      e.clientX, 
-      e.clientY, 
-      svgRef.current,
-      currentViewBox
-    );
-    
-    // Calculate new viewBox
-    const newViewBox = ViewBoxManager.zoom(currentViewBox, delta, zoomPoint);
-    
-    setCurrentViewBox(newViewBox);
-    setZoomLevel(newZoomLevel);
-  }, [currentViewBox, zoomLevel, zoomFactor, minZoom, maxZoom, setCurrentViewBox, setZoomLevel]);
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<SVGSVGElement>) => {
+      if (!svgRef.current || !currentViewBox) return;
+      e.preventDefault();
+      const direction = e.deltaY < 0 ? 1 + zoomFactor : 1 - zoomFactor;
+      let newZoom = Math.max(minZoom, Math.min(maxZoom, zoomLevel * direction));
+      const rect = svgRef.current.getBoundingClientRect();
+      const mouseX = ((e.clientX - rect.left) / rect.width) * currentViewBox.width + currentViewBox.x;
+      const mouseY = ((e.clientY - rect.top) / rect.height) * currentViewBox.height + currentViewBox.y;
+      const newWidth = currentViewBox.width / direction;
+      const newHeight = currentViewBox.height / direction;
+      const relX = (mouseX - currentViewBox.x) / currentViewBox.width;
+      const relY = (mouseY - currentViewBox.y) / currentViewBox.height;
+      const newX = mouseX - relX * newWidth;
+      const newY = mouseY - relY * newHeight;
+      setCurrentViewBox({
+        x: newX,
+        y: newY,
+        width: newWidth,
+        height: newHeight,
+      });
+      setZoomLevel(newZoom);
+    },
+    [svgRef, currentViewBox, zoomLevel, minZoom, maxZoom, zoomFactor, setCurrentViewBox, setZoomLevel]
+  );
 
   // Start panning
-  const handleMouseDown = useCallback((e: MouseEvent) => {
-    if (e.button !== 0 || !currentViewBox) return; // Only left mouse button
-    
-    isDragging.current = true;
-    lastMousePosition.current = { x: e.clientX, y: e.clientY };
-    
-    // Set cursor to grabbing
-    if (svgRef.current) {
-      svgRef.current.style.cursor = "grabbing";
-    }
-  }, [currentViewBox]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (e.button !== 0) return;
+      isPanning.current = true;
+      lastMouse.current = { x: e.clientX, y: e.clientY };
+      if (svgRef.current) svgRef.current.style.cursor = "grabbing";
+    },
+    [svgRef]
+  );
 
   // Handle panning motion
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging.current || !svgRef.current || !currentViewBox) return;
-    
-    const dx = e.clientX - lastMousePosition.current.x;
-    const dy = e.clientY - lastMousePosition.current.y;
-    
-    // Scale the movement according to the SVG viewport and current zoom level
-    const svgRect = svgRef.current.getBoundingClientRect();
-    const scaleX = currentViewBox.width / svgRect.width;
-    const scaleY = currentViewBox.height / svgRect.height;
-    
-    // Calculate pan distance in SVG coordinates
-    const panX = dx * scaleX;
-    const panY = dy * scaleY;
-    
-    // Update viewBox
-    const newViewBox = ViewBoxManager.pan(currentViewBox, -panX, -panY);
-    setCurrentViewBox(newViewBox);
-    
-    lastMousePosition.current = { x: e.clientX, y: e.clientY };
-  }, [currentViewBox, setCurrentViewBox]);
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!isPanning.current || !svgRef.current || !currentViewBox) return;
+      const dx = e.clientX - lastMouse.current.x;
+      const dy = e.clientY - lastMouse.current.y;
+      const rect = svgRef.current.getBoundingClientRect();
+      const scaleX = currentViewBox.width / rect.width;
+      const scaleY = currentViewBox.height / rect.height;
+      setCurrentViewBox({
+        ...currentViewBox,
+        x: currentViewBox.x - dx * scaleX,
+        y: currentViewBox.y - dy * scaleY,
+      });
+      lastMouse.current = { x: e.clientX, y: e.clientY };
+    },
+    [svgRef, currentViewBox, setCurrentViewBox]
+  );
 
   // End panning
   const handleMouseUp = useCallback(() => {
-    isDragging.current = false;
-    
-    // Reset cursor
-    if (svgRef.current) {
-      svgRef.current.style.cursor = "grab";
-    }
-  }, []);
-  
+    isPanning.current = false;
+    if (svgRef.current) svgRef.current.style.cursor = "grab";
+  }, [svgRef]);
+
   // Enable pointer events
   const handleMouseEnter = useCallback(() => {
-    if (svgRef.current) {
-      svgRef.current.style.cursor = "grab";
-    }
-  }, []);
+    if (!isPanning.current && svgRef.current) svgRef.current.style.cursor = "grab";
+  }, [svgRef]);
 
-  // Clean up event listeners when component unmounts
   useEffect(() => {
-    const svgElement = svgRef.current;
-    
-    if (svgElement) {
-      svgElement.addEventListener("wheel", handleWheel, { passive: false });
-      svgElement.addEventListener("mousedown", handleMouseDown);
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-      svgElement.addEventListener("mouseenter", handleMouseEnter);
-      
-      return () => {
-        svgElement.removeEventListener("wheel", handleWheel);
-        svgElement.removeEventListener("mousedown", handleMouseDown);
-        window.removeEventListener("mousemove", handleMouseMove);
-        window.removeEventListener("mouseup", handleMouseUp);
-        svgElement.removeEventListener("mouseenter", handleMouseEnter);
-      };
-    }
-  }, [handleWheel, handleMouseDown, handleMouseMove, handleMouseUp, handleMouseEnter]);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => window.removeEventListener("mouseup", handleMouseUp);
+  }, [handleMouseUp]);
 
-  // Reset view to default
   const resetView = useCallback(() => {
-    resetViewToDefault();
-  }, [resetViewToDefault]);
+    setCurrentViewBox({ x: 0, y: 0, width: 100, height: 100 });
+    setZoomLevel(1);
+  }, [setCurrentViewBox, setZoomLevel]);
 
-  // Fit content to view
-  const fitContent = useCallback(() => {
-    if (svgRef.current && currentViewBox) {
-      const bbox = svgRef.current.getBBox();
-      const padding = Math.min(bbox.width, bbox.height) * 0.1; // Add 10% padding
-      
-      setCurrentViewBox({
-        x: bbox.x - padding,
-        y: bbox.y - padding,
-        width: bbox.width + padding * 2,
-        height: bbox.height + padding * 2
-      });
-      setZoomLevel(1);
-    }
-  }, [currentViewBox, setCurrentViewBox, setZoomLevel]);
-
+  // Attach React event handlers (not native DOM listeners)
   return {
     svgRef,
-    viewBox: currentViewBox ? ViewBoxManager.toString(currentViewBox) : "0 0 100 100",
+    viewBox: viewBoxToString(currentViewBox),
     zoomLevel,
+    handleWheel,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    handleMouseEnter,
     resetView,
-    fitContent
   };
 }

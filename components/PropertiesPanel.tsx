@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useLogoStore } from '../store/logoStore';
 import ShapePropertiesControls from './ShapePropertiesControls';
@@ -30,8 +29,8 @@ const PropertiesPanel: React.FC = () => {
           <div>
              <h3 className="text-lg font-semibold text-emerald-400 mb-2 border-b border-slate-700 pb-2">Transform</h3>
             <TransformControls
+              transform={selectedElementProps.transform || {}}
               elementId={selectedElementId}
-              transform={selectedElementProps.transform}
               updateProperty={updateElementProperty}
             />
           </div>
