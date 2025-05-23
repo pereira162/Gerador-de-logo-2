@@ -1,4 +1,3 @@
-
 export enum Screen {
   TemplateSelection = 'TemplateSelection',
   Editor = 'Editor',
@@ -71,30 +70,28 @@ export interface LogoProjectState {
   companyName: TextProperties;
   tagline: TextProperties | null;
   
-  // ViewBox state for canvas navigation
+  // ViewBox state para navegação
   currentViewBox: ViewBox | null;
   zoomLevel: number;
-  
-  // For P1 Undo/Redo - not implemented in P0
-  // history: Partial<LogoProjectState>[]; 
-  // historyIndex: number;
 
-  // Actions
+  // Actions principais
   setScreen: (screen: Screen) => void;
   loadTemplates: (templates: SVGTemplate[]) => void;
   selectTemplate: (templateId: string) => void;
   setSelectedElementId: (elementId: string | null) => void;
   updateElementProperty: (elementId: string, propertyPath: string, value: any) => void;
   applyGlobalPalette: (paletteName: string) => void;
-  
   updateTextProperty: (
     textType: 'companyName' | 'tagline',
     property: keyof TextProperties,
     value: any
   ) => void;
   setTaglineEnabled: (enabled: boolean) => void;
-
   getFinalSvgForExport: () => string;
+
+  // ViewBox/Zoom actions
+  setCurrentViewBox: (viewBox: ViewBox) => void;
+  setZoomLevel: (zoom: number) => void;
 }
 
 // Map element classes to palette color keys

@@ -1,13 +1,11 @@
-
 import { create } from 'zustand';
-import { LogoProjectState, Screen, SVGTemplate, ColorPalette, TextProperties, PALETTE_CLASS_MAP, SVGElementProperties, ViewBox } from '../types';
+import { LogoProjectState, Screen, TextProperties, PALETTE_CLASS_MAP, SVGElementProperties, ViewBox } from '../types';
 import { INITIAL_SCREEN, DEFAULT_FONTS, DEFAULT_TEXT_COLOR, DEFAULT_FONT_SIZE } from '../constants';
 import { PREDEFINED_PALETTES } from '../data/colorPalettes';
 import { SVG_TEMPLATES } from '../data/svgTemplates';
 import { 
   applyElementPropertiesToSvg, 
   extractInitialElementsProperties,
-  applyPaletteToSvgString,
   addTextElementsToSvg,
   getViewBox,
 } from '../utils/svgUtils';
@@ -34,8 +32,8 @@ const useLogoStore = create<LogoProjectState>((set, get) => ({
   selectedPaletteName: PREDEFINED_PALETTES[0]?.name || null,
   companyName: initialTextProps("Company Name", 80),
   tagline: null, // Initially disabled
-  currentViewBox: null, // Will be initialized when template is selected
   zoomLevel: 1, // Default zoom level
+  currentViewBox: null, // Adicionada propriedade obrigatória currentViewBox ao estado inicial
 
   setScreen: (screen) => set({ currentScreen: screen }),
   loadTemplates: (templates) => set({ templates }),
@@ -61,7 +59,6 @@ const useLogoStore = create<LogoProjectState>((set, get) => ({
         companyName: initialTextProps("Company Name", companyNameY),
         tagline: get().tagline ? initialTextProps("Your awesome tagline", taglineY) : null,
         // Initialize ViewBox with the template's default ViewBox
-        currentViewBox: viewBox,
         zoomLevel: 1 // Reset zoom level when selecting a new template
       });
     }
@@ -184,7 +181,7 @@ const useLogoStore = create<LogoProjectState>((set, get) => ({
 
   getFinalSvgForExport: () => {
     try {
-      const { editedIconSvg, companyName, tagline, currentViewBox } = get();
+      const { editedIconSvg, companyName, tagline } = get();
       if (!editedIconSvg) return "";
 
       // Create cache key without including the entire objects to avoid serialization issues

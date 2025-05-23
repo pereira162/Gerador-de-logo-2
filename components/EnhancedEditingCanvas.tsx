@@ -1,7 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { useZoomPan } from '../hooks/useZoomPan';
+import useZoomPan from '../hooks/useZoomPan';
 import { useLogoStore } from '../store/logoStore';
-import { ViewBoxManager } from '../services/ViewBoxManager';
+
+// Adicione ou ajuste conforme seu projeto:
+export const SVG_EDITABLE_CLASS = "svg-editable-element";
 
 interface EnhancedEditingCanvasProps {
   svgContent: string;
@@ -18,32 +20,35 @@ const EnhancedEditingCanvas: React.FC<EnhancedEditingCanvasProps> = ({
   
   // Parse the SVG content once
   const parser = new DOMParser();
-  const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
-  const svgElement = svgDoc.documentElement;
-  
-  // Get the current viewBox from the SVG or use a default
-  const originalViewBoxStr = svgElement.getAttribute('viewBox');
   
   // Set up zoom and pan functionality
-  const { svgRef, viewBox, zoomLevel, resetView, fitContent } = useZoomPan({
+  const svgRef = useRef<SVGSVGElement>(null);
+  const { svgRef: panRef, viewBox, zoomLevel, resetView } = useZoomPan(svgRef, {
     minZoom: 0.1,
     maxZoom: 10,
     zoomFactor: 0.1
   });
 
-  // Select an element on click
+  // Seleção: só permite selecionar elementos com id e classe SVG_EDITABLE_CLASS
   const handleElementClick = (e: React.MouseEvent) => {
     const target = e.target as SVGElement;
-    
-    // Find the nearest element with an ID (could be a parent)
-    let currentElement: SVGElement | null = target;
-    while (currentElement && !currentElement.id && currentElement !== svgRef.current) {
-      currentElement = currentElement.parentElement as SVGElement;
+    let currentElement: Element | null = target;
+    while (
+      currentElement &&
+      (!(currentElement as SVGElement).id ||
+        !(currentElement as SVGElement).classList.contains(SVG_EDITABLE_CLASS)) &&
+      currentElement !== svgRef.current
+    ) {
+      currentElement = currentElement.parentElement ? (currentElement.parentElement as unknown as SVGElement) : null;
     }
-    
-    if (currentElement && currentElement.id && currentElement !== svgRef.current) {
+    if (
+      currentElement &&
+      (currentElement as SVGElement).id &&
+      (currentElement as SVGElement).classList.contains(SVG_EDITABLE_CLASS) &&
+      currentElement !== svgRef.current
+    ) {
       e.stopPropagation(); // Prevent event bubbling to container
-      setSelectedElementId(currentElement.id);
+      setSelectedElementId((currentElement as SVGElement).id);
     }
   };
 
@@ -63,6 +68,13 @@ const EnhancedEditingCanvas: React.FC<EnhancedEditingCanvasProps> = ({
       
       // Remove any existing viewBox to use our managed one
       svgElement.removeAttribute('viewBox');
+      
+      // Garante que elementos editáveis tenham a classe correta
+      svgElement.querySelectorAll('[id]').forEach(el => {
+        if (!el.classList.contains(SVG_EDITABLE_CLASS)) {
+          el.classList.add(SVG_EDITABLE_CLASS);
+        }
+      });
       
       // Parse SVG content to HTML string
       const svgInnerHTML = new XMLSerializer().serializeToString(svgElement);
@@ -93,12 +105,6 @@ const EnhancedEditingCanvas: React.FC<EnhancedEditingCanvasProps> = ({
           >
             Reset View
           </button>
-          <button 
-            onClick={fitContent}
-            className="px-3 py-1 text-sm bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-md transition-colors"
-          >
-            Fit Content
-          </button>
         </div>
         <div className="text-sm text-slate-500 dark:text-slate-400">
           Zoom: {Math.round(zoomLevel * 100)}%
@@ -112,7 +118,7 @@ const EnhancedEditingCanvas: React.FC<EnhancedEditingCanvasProps> = ({
         onClick={handleBackgroundClick}
       >
         <svg
-          ref={svgRef}
+          ref={panRef}
           viewBox={viewBox}
           xmlns="http://www.w3.org/2000/svg"
           className="w-full h-full cursor-grab"
@@ -123,10 +129,23 @@ const EnhancedEditingCanvas: React.FC<EnhancedEditingCanvasProps> = ({
         
         {/* Selection Indicator */}
         {selectedElementId && svgRef.current && (
-          <SelectionHighlight
-            svgRef={svgRef}
-            selectedElementId={selectedElementId}
-          />
+          <svg
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              pointerEvents: "none",
+              width: "100%",
+              height: "100%",
+              zIndex: 10,
+            }}
+            viewBox={viewBox}
+          >
+            <SelectionHighlight
+              svgRef={svgRef}
+              selectedElementId={selectedElementId}
+            />
+          </svg>
         )}
       </div>
       
@@ -149,24 +168,17 @@ const SelectionHighlight: React.FC<SelectionHighlightProps> = ({ svgRef, selecte
 
   useEffect(() => {
     if (!svgRef.current || !highlightRef.current) return;
-    
     const selectedElement = svgRef.current.getElementById(selectedElementId);
     if (selectedElement) {
       try {
-        // Get bounding box of selected element
-        const bbox = selectedElement.getBBox();
-        
-        // Apply element's transforms if any
+        // Corrigir tipo para acessar getBBox
+        const bbox = (selectedElement as SVGGraphicsElement).getBBox();
         const transform = selectedElement.getAttribute('transform');
-        
-        // Update highlight position
         const highlight = highlightRef.current;
         highlight.setAttribute('x', String(bbox.x));
         highlight.setAttribute('y', String(bbox.y));
         highlight.setAttribute('width', String(bbox.width));
         highlight.setAttribute('height', String(bbox.height));
-        
-        // If there's a transform, apply it to the highlight as well
         if (transform) {
           highlight.setAttribute('transform', transform);
         } else {

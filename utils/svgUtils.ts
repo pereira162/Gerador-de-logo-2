@@ -1,6 +1,5 @@
-
-import { SVGElementProperties, TextProperties, PALETTE_CLASS_MAP, ColorPalette } from '../types';
-import { SVG_EDITABLE_CLASS, DEFAULT_FILL_COLOR, DEFAULT_STROKE_COLOR } from '../constants';
+import { SVGElementProperties, TextProperties, ColorPalette } from '../types';
+import { SVG_EDITABLE_CLASS, DEFAULT_FILL_COLOR } from '../constants';
 
 // Helper to parse transform string; very basic, assumes order or specific formats.
 // A robust solution would use regex or a micro-parser.
