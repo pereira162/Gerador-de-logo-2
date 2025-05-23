@@ -74,7 +74,6 @@ export const applyElementPropertiesToSvg = (
 ): string => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(originalSvgString, "image/svg+xml");
-  const svgRoot = doc.documentElement;
 
   Object.entries(allElementsProps).forEach(([id, propsToApply]) => {
     const element = doc.getElementById(id);
@@ -93,16 +92,9 @@ export const applyElementPropertiesToSvg = (
       }
     }
   });
-  
-  if (svgRoot instanceof SVGElement) {
-    svgRoot.removeAttribute('width');
-    svgRoot.removeAttribute('height');
-    svgRoot.style.width = '100%';
-    svgRoot.style.height = '100%';
-  }
 
   const serializer = new XMLSerializer();
-  return serializer.serializeToString(svgRoot);
+  return serializer.serializeToString(doc.documentElement);
 };
 
 
@@ -113,7 +105,6 @@ export const applyPaletteToSvgString = (
 ): string => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgString, "image/svg+xml");
-  const svgRoot = doc.documentElement;
 
   Object.entries(classMap).forEach(([className, colorKey]) => {
     const elements = doc.querySelectorAll(`.${className}`);
@@ -127,16 +118,9 @@ export const applyPaletteToSvgString = (
       });
     }
   });
-  
-  if (svgRoot instanceof SVGElement) {
-    svgRoot.removeAttribute('width');
-    svgRoot.removeAttribute('height');
-    svgRoot.style.width = '100%';
-    svgRoot.style.height = '100%';
-  }
 
   const serializer = new XMLSerializer();
-  return serializer.serializeToString(svgRoot);
+  return serializer.serializeToString(doc.documentElement);
 };
 
 export const addTextElementsToSvg = (svgString: string, textElementsConfig: TextProperties[]): string => {
@@ -149,7 +133,7 @@ export const addTextElementsToSvg = (svgString: string, textElementsConfig: Text
   // Remove any existing text elements added by this function (e.g. with a specific class)
   doc.querySelectorAll('.logo-text-element').forEach(el => el.remove());
 
-  textElementsConfig.forEach((config, index) => {
+  textElementsConfig.forEach(config => {
     if (!config.content.trim()) return; // Don't add empty text
 
     const textEl = doc.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -161,21 +145,10 @@ export const addTextElementsToSvg = (svgString: string, textElementsConfig: Text
     textEl.setAttribute('text-anchor', config.textAnchor);
     textEl.classList.add('logo-text-element'); // Mark as added text
     textEl.classList.add(SVG_EDITABLE_CLASS); // Make text editable too
-    
-    // Use stable IDs based on index (0 for company name, 1 for tagline)
-    const idSuffix = index === 0 ? 'companyname' : 'tagline';
-    textEl.id = `logo-text-${idSuffix}`;
-    
+    textEl.id = `text-${config.content.substring(0,10).replace(/\s/g,'_')}-${Date.now()}` // basic unique id
     textEl.textContent = config.content;
     svgRoot.appendChild(textEl);
   });
-
-  if (svgRoot instanceof SVGElement) {
-    svgRoot.removeAttribute('width');
-    svgRoot.removeAttribute('height');
-    svgRoot.style.width = '100%';
-    svgRoot.style.height = '100%';
-  }
 
   const serializer = new XMLSerializer();
   return serializer.serializeToString(svgRoot);
@@ -199,8 +172,6 @@ export const applyTempHighlightToSvgElement = (svgString: string, elementId: str
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgString, "image/svg+xml");
   const element = doc.getElementById(elementId);
-  const svgRoot = doc.documentElement;
-
   if (element) {
     element.setAttribute('data-original-stroke', element.getAttribute('stroke') || 'none');
     element.setAttribute('data-original-stroke-width', element.getAttribute('stroke-width') || '0');
@@ -210,24 +181,14 @@ export const applyTempHighlightToSvgElement = (svgString: string, elementId: str
     element.setAttribute('stroke-width', styles.strokeWidth);
     if(styles.strokeDasharray) element.setAttribute('stroke-dasharray', styles.strokeDasharray);
   }
-
-  if (svgRoot instanceof SVGElement) { // Ensure responsiveness is maintained
-    svgRoot.removeAttribute('width');
-    svgRoot.removeAttribute('height');
-    svgRoot.style.width = '100%';
-    svgRoot.style.height = '100%';
-  }
-
   const serializer = new XMLSerializer();
-  return serializer.serializeToString(svgRoot);
+  return serializer.serializeToString(doc.documentElement);
 };
 
 export const removeTempHighlightFromSvgElement = (svgString: string, elementId: string): string => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgString, "image/svg+xml");
   const element = doc.getElementById(elementId);
-  const svgRoot = doc.documentElement;
-
   if (element) {
     const originalStroke = element.getAttribute('data-original-stroke');
     const originalStrokeWidth = element.getAttribute('data-original-stroke-width');
@@ -241,14 +202,6 @@ export const removeTempHighlightFromSvgElement = (svgString: string, elementId: 
     element.removeAttribute('data-original-stroke-width');
     element.removeAttribute('data-original-stroke-dasharray');
   }
-
-  if (svgRoot instanceof SVGElement) { // Ensure responsiveness is maintained
-    svgRoot.removeAttribute('width');
-    svgRoot.removeAttribute('height');
-    svgRoot.style.width = '100%';
-    svgRoot.style.height = '100%';
-  }
-  
   const serializer = new XMLSerializer();
-  return serializer.serializeToString(svgRoot);
+  return serializer.serializeToString(doc.documentElement);
 };

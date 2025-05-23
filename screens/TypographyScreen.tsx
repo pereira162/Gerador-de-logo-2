@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react'; // Import useMemo
+import React from 'react';
 import { useLogoStore } from '../store/logoStore';
 import { Screen, TextProperties } from '../types';
 import { DEFAULT_FONTS, MIN_FONT_SIZE, MAX_FONT_SIZE } from '../constants';
@@ -82,41 +82,120 @@ const TextPropertyControls: React.FC<{
   );
 };
 
-const TypographyScreen: React.FC = () => {
-  const { 
-    companyName, 
-    tagline, 
-    updateTextProperty, 
-    setTaglineEnabled,
-    setScreen,
-    getFinalSvgForExport,
-    editedIconSvg // Fetch editedIconSvg for useMemo dependency
-  } = useLogoStore(state => ({
-    companyName: state.companyName,
-    tagline: state.tagline,
-    updateTextProperty: state.updateTextProperty,
-    setTaglineEnabled: state.setTaglineEnabled,
-    setScreen: state.setScreen,
-    getFinalSvgForExport: state.getFinalSvgForExport,
-    editedIconSvg: state.editedIconSvg, // Add editedIconSvg to selector
-  }));
+// Error boundary component to catch errors in the component
+export const ErrorBoundary: React.FC<{children: React.ReactNode}> = ({ children }) => {
+  const [hasError, setHasError] = React.useState(false);
+  
+  React.useEffect(() => {
+    const handleError = () => {
+      setHasError(true);
+    };
+    
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  }, []);
+  
+  if (hasError) {
+    return (
+      <div className="p-4 bg-red-500 text-white rounded-lg">
+        <h3 className="text-xl font-bold">Something went wrong</h3>
+        <p>There was an error rendering this component. Please try again or go back to the previous step.</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="mt-4 px-4 py-2 bg-white text-red-500 rounded-lg font-medium"
+        >
+          Reload Page
+        </button>
+      </div>
+    );
+  }
+  
+  return <>{children}</>;
+};
 
-  // Memoize the result of getFinalSvgForExport
-  const finalSvgPreview = useMemo(() => {
-    return getFinalSvgForExport();
-  }, [editedIconSvg, companyName, tagline, getFinalSvgForExport]);
+const TypographyScreen: React.FC = () => {
+    // Optimize store selection to prevent excessive re-renders
+  // Use individual selectors with custom equality checks
+  const updateTextProperty = useLogoStore(state => state.updateTextProperty);
+  const setTaglineEnabled = useLogoStore(state => state.setTaglineEnabled);
+  const setScreen = useLogoStore(state => state.setScreen);
+  
+  // For data properties, use shallow comparison or targeted comparison to reduce re-renders
+  const companyName = useLogoStore(
+    state => state.companyName, 
+    (prev, next) => {
+      if (!prev && !next) return true;
+      if (!prev || !next) return false;
+      // Only compare the fields that will affect the UI
+      return (
+        prev.content === next.content &&
+        prev.fontFamily === next.fontFamily &&
+        prev.fontSize === next.fontSize &&
+        prev.fill === next.fill &&
+        prev.textAnchor === next.textAnchor &&
+        prev.x === next.x &&
+        prev.y === next.y
+      );
+    }
+  );
+  
+  const tagline = useLogoStore(
+    state => state.tagline,
+    (prev, next) => {
+      if (!prev && !next) return true;
+      if (!prev || !next) return false;
+      // Only compare the fields that will affect the UI
+      return (
+        prev.content === next.content &&
+        prev.fontFamily === next.fontFamily &&
+        prev.fontSize === next.fontSize &&
+        prev.fill === next.fill &&
+        prev.textAnchor === next.textAnchor &&
+        prev.x === next.x &&
+        prev.y === next.y
+      );
+    }
+  );
+  
+  const getFinalSvgForExport = useLogoStore(state => state.getFinalSvgForExport);
+
+  // Cache the SVG preview with useMemo to prevent infinite renders
+  // Use specific dependencies rather than whole objects
+  const finalSvgPreview = React.useMemo(() => {
+    try {
+      return getFinalSvgForExport();
+    } catch (error) {
+      console.error('Error generating SVG preview:', error);
+      return '<svg width="200" height="200" viewBox="0 0 100 100"><text x="50" y="50" text-anchor="middle" fill="red">Error rendering preview</text></svg>';
+    }
+  }, [
+    companyName?.content,
+    companyName?.fontFamily,
+    companyName?.fontSize,
+    companyName?.fill,
+    companyName?.textAnchor,
+    companyName?.x,
+    companyName?.y,
+    tagline?.content,
+    tagline?.fontFamily,
+    tagline?.fontSize,
+    tagline?.fill,
+    tagline?.textAnchor,
+    tagline?.x,
+    tagline?.y,
+  ]);
 
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 md:gap-6 h-[calc(100vh-200px)] min-h-[600px] animate-fadeIn">
-      <div className="lg:w-1/2 xl:w-2/3 flex flex-col space-y-4">
+      <div className="lg:w-2/5 xl:w-1/2 flex flex-col space-y-4">
         <h2 className="text-3xl font-semibold text-center text-emerald-400 mb-2">Add Your Text</h2>
         <div className="flex-grow bg-slate-700 p-2 rounded-lg shadow-inner">
-            <EditingCanvas svgContent={finalSvgPreview} className="w-full h-full aspect-square object-contain"/>
+            <EditingCanvas svgContent={finalSvgPreview} className="w-full max-h-[400px] md:max-h-[350px] object-contain"/>
         </div>
       </div>
 
-      <div className="lg:w-1/2 xl:w-1/3 space-y-6 overflow-y-auto max-h-[calc(100vh-240px)] pr-2">
+      <div className="lg:w-3/5 xl:w-1/2 space-y-6 overflow-y-auto max-h-[calc(100vh-240px)] pr-2">
         <TextPropertyControls title="Company Name" textType="companyName" textProps={companyName} updateProperty={updateTextProperty} />
         
         <div>
@@ -135,13 +214,15 @@ const TypographyScreen: React.FC = () => {
         </div>
       </div>
       
-      <div className="w-full lg:col-span-full flex justify-between mt-4 items-center fixed bottom-4 right-4 left-4 px-4 lg:static lg:px-0">
-        <button
-            onClick={() => setScreen(Screen.Editor)}
-            className="px-6 py-3 bg-slate-600 hover:bg-slate-500 text-white font-semibold rounded-lg shadow-md transition-colors text-lg"
-        >
-            &larr; Back to Icon
-        </button>
+      <div className="w-full lg:col-span-full flex justify-between mt-4 items-center">
+        <div>
+          <button
+              onClick={() => setScreen(Screen.Editor)}
+              className="px-6 py-3 bg-slate-600 hover:bg-slate-500 text-white font-semibold rounded-lg shadow-md transition-colors text-lg"
+          >
+              &larr; Back to Icon
+          </button>
+        </div>
         <button
             onClick={() => setScreen(Screen.Export)}
             className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg shadow-md transition-colors text-lg"
@@ -149,6 +230,7 @@ const TypographyScreen: React.FC = () => {
             Next: Export Logo &rarr;
         </button>
       </div>
+      {/* Fix: Removed non-standard 'jsx' and 'global' attributes from style tag. Standard CSS-in-JS or a global CSS file is preferred for styles. */}
        <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }

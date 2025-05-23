@@ -47,6 +47,13 @@ export interface TextProperties {
   textAnchor: 'start' | 'middle' | 'end';
 }
 
+export interface ViewBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface LogoProjectState {
   currentScreen: Screen;
   templates: SVGTemplate[];
@@ -63,6 +70,10 @@ export interface LogoProjectState {
 
   companyName: TextProperties;
   tagline: TextProperties | null;
+  
+  // ViewBox state for canvas navigation
+  currentViewBox: ViewBox | null;
+  zoomLevel: number;
   
   // For P1 Undo/Redo - not implemented in P0
   // history: Partial<LogoProjectState>[]; 

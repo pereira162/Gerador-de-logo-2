@@ -4,7 +4,7 @@ import { useLogoStore } from './store/logoStore';
 import { Screen } from './types';
 import TemplateSelectionScreen from './screens/TemplateSelectionScreen';
 import EditorScreen from './screens/EditorScreen';
-import TypographyScreen from './screens/TypographyScreen';
+import TypographyScreen, { ErrorBoundary } from './screens/TypographyScreen';
 import ExportScreen from './screens/ExportScreen';
 
 const App: React.FC = () => {
@@ -17,7 +17,11 @@ const App: React.FC = () => {
       case Screen.Editor:
         return <EditorScreen />;
       case Screen.Typography:
-        return <TypographyScreen />;
+        return <React.Suspense fallback={<div>Loading...</div>}>
+          <ErrorBoundary>
+            <TypographyScreen />
+          </ErrorBoundary>
+        </React.Suspense>;
       case Screen.Export:
         return <ExportScreen />;
       default:

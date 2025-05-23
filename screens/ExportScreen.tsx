@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react'; // Import useMemo
+import React, { useState } from 'react';
 import { useLogoStore } from '../store/logoStore';
 import { Screen } from '../types';
 import { EXPORT_RESOLUTIONS, DEFAULT_SVG_EXPORT_WIDTH, DEFAULT_SVG_EXPORT_HEIGHT } from '../constants';
@@ -8,26 +8,14 @@ import { downloadSVG, downloadPNG } from '../utils/exportUtils';
 import { getViewBox } from '../utils/svgUtils';
 
 const ExportScreen: React.FC = () => {
-  const { 
-    getFinalSvgForExport, 
-    setScreen,
-    editedIconSvg, // Fetch for useMemo dependency
-    companyName,   // Fetch for useMemo dependency
-    tagline        // Fetch for useMemo dependency
-  } = useLogoStore(state => ({
+  const { getFinalSvgForExport, setScreen } = useLogoStore(state => ({
      getFinalSvgForExport: state.getFinalSvgForExport,
      setScreen: state.setScreen,
-     editedIconSvg: state.editedIconSvg,
-     companyName: state.companyName,
-     tagline: state.tagline,
   }));
   const [filename, setFilename] = useState('my-geometric-logo');
   const [selectedResolution, setSelectedResolution] = useState(EXPORT_RESOLUTIONS[0]);
 
-  // Memoize the result of getFinalSvgForExport
-  const finalSvg = useMemo(() => {
-    return getFinalSvgForExport();
-  }, [editedIconSvg, companyName, tagline, getFinalSvgForExport]);
+  const finalSvg = getFinalSvgForExport();
   
   const handleExportSVG = () => {
     if (finalSvg) {
@@ -49,15 +37,15 @@ const ExportScreen: React.FC = () => {
       <h2 className="text-3xl font-semibold mb-6 text-center text-emerald-400">Export Your Logo</h2>
       
       <div className="flex flex-col lg:flex-row gap-6 md:gap-8">
-        <div className="lg:w-1/2 bg-slate-700 p-4 rounded-lg shadow-inner flex items-center justify-center aspect-square">
+        <div className="lg:w-2/5 bg-slate-700 p-4 rounded-lg shadow-inner flex items-center justify-center">
           {finalSvg ? (
-            <EditingCanvas svgContent={finalSvg} className="w-full h-full object-contain"/>
+            <EditingCanvas svgContent={finalSvg} className="w-full max-h-[350px] object-contain"/>
           ) : (
             <p className="text-slate-400">Generating preview...</p>
           )}
         </div>
 
-        <div className="lg:w-1/2 space-y-6 p-6 bg-slate-700 rounded-lg shadow">
+        <div className="lg:w-3/5 space-y-6 p-6 bg-slate-700 rounded-lg shadow">
           <div>
             <label htmlFor="filename" className="block text-sm font-medium text-slate-300 mb-1">Filename</label>
             <input
@@ -109,14 +97,17 @@ const ExportScreen: React.FC = () => {
         </div>
       </div>
       
-      <div className="w-full flex justify-start mt-8">
-        <button
-            onClick={() => setScreen(Screen.Typography)}
-            className="px-6 py-3 bg-slate-600 hover:bg-slate-500 text-white font-semibold rounded-lg shadow-md transition-colors text-lg"
-        >
-            &larr; Back to Typography
-        </button>
+      <div className="w-full flex justify-between mt-8">
+        <div>
+          <button
+              onClick={() => setScreen(Screen.Typography)}
+              className="px-6 py-3 bg-slate-600 hover:bg-slate-500 text-white font-semibold rounded-lg shadow-md transition-colors text-lg"
+          >
+              &larr; Back to Typography
+          </button>
+        </div>
       </div>
+      {/* Fix: Removed non-standard 'jsx' and 'global' attributes from style tag. Standard CSS-in-JS or a global CSS file is preferred for styles. */}
        <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }

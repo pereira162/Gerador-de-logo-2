@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { useLogoStore } from '../store/logoStore';
-import EditingCanvas from '../components/EditingCanvas';
+import EnhancedEditingCanvas from '../components/EnhancedEditingCanvas';
 import PropertiesPanel from '../components/PropertiesPanel';
 import { Screen } from '../types';
 
@@ -24,25 +24,20 @@ const EditorScreen: React.FC = () => {
   }
   
   return (
-    <div className="flex flex-col gap-4 md:gap-6 animate-fadeIn"> {/* Outer container for vertical flow */}
-      {/* Inner container for side-by-side Canvas and Properties on large screens */}
-      <div className="flex flex-col lg:flex-row gap-4 md:gap-6">
-        {/* Canvas Column */}
-        <div className="flex-grow lg:w-2/3"> {/* Canvas wrapper */}
-          <EditingCanvas
-            svgContent={editedIconSvg}
-            className="w-full aspect-square lg:max-h-[65vh]" // Canvas styled: full width, aspect square, max height on large screens
-          />
-        </div>
-
-        {/* Properties Panel Column */}
-        <div className="lg:w-1/3 xl:w-1/4 lg:max-h-[65vh] overflow-y-auto"> {/* Properties wrapper: max height, scrolls if needed */}
-          <PropertiesPanel /> {/* PropertiesPanel has internal h-full & overflow-y-auto */}
-        </div>
+    <div className="flex flex-col lg:flex-row gap-4 md:gap-6 h-[calc(100vh-200px)] min-h-[500px] animate-fadeIn">
+      <div className="flex-grow lg:w-3/5 h-full lg:h-auto">
+        <EnhancedEditingCanvas svgContent={editedIconSvg} className="w-full max-h-[600px] md:max-h-[600px] object-contain" />
       </div>
-
-      {/* Navigation Buttons - full width, below the canvas/properties row */}
-      <div className="w-full flex justify-end mt-4">
+      <div className="lg:w-2/5 xl:w-2/5 h-full lg:h-auto overflow-y-auto">
+        <PropertiesPanel />
+      </div>
+      <div className="w-full lg:col-span-full flex justify-between mt-4">
+        <button
+            onClick={() => setScreen(Screen.TemplateSelection)}
+            className="px-6 py-3 bg-slate-600 hover:bg-slate-500 text-white font-semibold rounded-lg shadow-md transition-colors text-lg"
+        >
+            &larr; Back to Templates
+        </button>
         <button
             onClick={() => setScreen(Screen.Typography)}
             className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg shadow-md transition-colors text-lg"
@@ -50,6 +45,7 @@ const EditorScreen: React.FC = () => {
             Next: Add Text &rarr;
         </button>
       </div>
+      {/* Fix: Removed non-standard 'jsx' and 'global' attributes from style tag. Standard CSS-in-JS or a global CSS file is preferred for styles. */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }

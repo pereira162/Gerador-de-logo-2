@@ -20,7 +20,7 @@ const TemplateCard: React.FC<TemplateCardProps> = ({ template, onSelect, isSelec
     >
       <div className="w-32 h-32 mb-3 flex items-center justify-center bg-slate-600 rounded overflow-hidden p-1">
         <div 
-          className="w-full h-full transform scale-90 group-hover:scale-100 transition-transform duration-150"
+          className="w-full h-full flex items-center justify-center transform scale-90 group-hover:scale-100 transition-transform duration-150"
           dangerouslySetInnerHTML={{ __html: template.svgContent }}
         />
       </div>

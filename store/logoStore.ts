@@ -1,6 +1,6 @@
 
 import { create } from 'zustand';
-import { LogoProjectState, Screen, SVGTemplate, ColorPalette, TextProperties, PALETTE_CLASS_MAP, SVGElementProperties } from '../types';
+import { LogoProjectState, Screen, SVGTemplate, ColorPalette, TextProperties, PALETTE_CLASS_MAP, SVGElementProperties, ViewBox } from '../types';
 import { INITIAL_SCREEN, DEFAULT_FONTS, DEFAULT_TEXT_COLOR, DEFAULT_FONT_SIZE } from '../constants';
 import { PREDEFINED_PALETTES } from '../data/colorPalettes';
 import { SVG_TEMPLATES } from '../data/svgTemplates';
@@ -34,6 +34,8 @@ const useLogoStore = create<LogoProjectState>((set, get) => ({
   selectedPaletteName: PREDEFINED_PALETTES[0]?.name || null,
   companyName: initialTextProps("Company Name", 80),
   tagline: null, // Initially disabled
+  currentViewBox: null, // Will be initialized when template is selected
+  zoomLevel: 1, // Default zoom level
 
   setScreen: (screen) => set({ currentScreen: screen }),
   loadTemplates: (templates) => set({ templates }),
@@ -58,6 +60,9 @@ const useLogoStore = create<LogoProjectState>((set, get) => ({
         selectedElementId: null, // Reset selected element
         companyName: initialTextProps("Company Name", companyNameY),
         tagline: get().tagline ? initialTextProps("Your awesome tagline", taglineY) : null,
+        // Initialize ViewBox with the template's default ViewBox
+        currentViewBox: viewBox,
+        zoomLevel: 1 // Reset zoom level when selecting a new template
       });
     }
   },
@@ -157,15 +162,79 @@ const useLogoStore = create<LogoProjectState>((set, get) => ({
     });
   },
 
-  getFinalSvgForExport: () => {
-    const { editedIconSvg, companyName, tagline } = get();
-    if (!editedIconSvg) return "";
+  // ViewBox management functions
+  setCurrentViewBox: (viewBox: ViewBox) => {
+    set({ currentViewBox: viewBox });
+  },
 
-    const textElements: TextProperties[] = [companyName];
-    if (tagline) {
-      textElements.push(tagline);
+  setZoomLevel: (zoomLevel: number) => {
+    set({ zoomLevel });
+  },
+
+  resetViewToDefault: () => {
+    const { originalIconSvg } = get();
+    if (originalIconSvg) {
+      const defaultViewBox = getViewBox(originalIconSvg) || { x: 0, y: 0, width: 100, height: 100 };
+      set({ 
+        currentViewBox: defaultViewBox,
+        zoomLevel: 1
+      });
     }
-    return addTextElementsToSvg(editedIconSvg, textElements);
+  },
+
+  getFinalSvgForExport: () => {
+    try {
+      const { editedIconSvg, companyName, tagline, currentViewBox } = get();
+      if (!editedIconSvg) return "";
+
+      // Create cache key without including the entire objects to avoid serialization issues
+      let cacheKey = "svg_";
+      
+      // Basic implementation of simple hash for cache key
+      if (companyName) {
+        cacheKey += `c_${companyName.content}_${companyName.fontFamily}_${companyName.fontSize}_${companyName.fill}_${companyName.textAnchor}_${companyName.x}_${companyName.y}`;
+      } else {
+        cacheKey += "c_none";
+      }
+      
+      if (tagline) {
+        cacheKey += `t_${tagline.content}_${tagline.fontFamily}_${tagline.fontSize}_${tagline.fill}_${tagline.textAnchor}_${tagline.x}_${tagline.y}`;
+      } else {
+        cacheKey += "t_none";
+      }
+      
+      cacheKey += `_icon_${editedIconSvg.length}`;
+      
+      // Create a stable cache mechanism
+      if (typeof window !== 'undefined') {
+        if (!(window as any)._svgCache) (window as any)._svgCache = {};
+        if (!(window as any)._svgCache[cacheKey]) {
+          // Only create the array once with the existing objects
+          const textElements: TextProperties[] = [];
+          if (companyName) textElements.push(companyName);
+          if (tagline) textElements.push(tagline);
+          
+          (window as any)._svgCache[cacheKey] = addTextElementsToSvg(editedIconSvg, textElements);
+          
+          // Limit cache size to prevent memory leaks
+          const cacheKeys = Object.keys((window as any)._svgCache);
+          if (cacheKeys.length > 20) { // Keep only last 20 renderings
+            delete (window as any)._svgCache[cacheKeys[0]];
+          }
+        }
+        
+        return (window as any)._svgCache[cacheKey];
+      }
+      
+      // Fallback if window is not defined or cache fails
+      const textElements: TextProperties[] = [];
+      if (companyName) textElements.push(companyName);
+      if (tagline) textElements.push(tagline);
+      return addTextElementsToSvg(editedIconSvg, textElements);
+    } catch (error) {
+      console.error('Error generating SVG for export:', error);
+      return '<svg width="200" height="200" viewBox="0 0 100 100"><text x="50" y="50" text-anchor="middle" fill="red">Error rendering SVG</text></svg>';
+    }
   },
 
 }));
