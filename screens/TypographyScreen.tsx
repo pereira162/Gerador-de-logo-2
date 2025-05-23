@@ -1,10 +1,36 @@
-
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useLogoStore } from '../store/logoStore';
 import { Screen, TextProperties } from '../types';
 import { DEFAULT_FONTS, MIN_FONT_SIZE, MAX_FONT_SIZE } from '../constants';
 import ColorPicker from '../components/ColorPicker';
-import EditingCanvas from '../components/EditingCanvas'; // For preview
+import useZoomPan from '../hooks/useZoomPan';
+
+// Função utilitária para calcular o bounding box de todo o conteúdo SVG (ícone + textos)
+function getFullContentBoundsForTypography(svg: SVGSVGElement, margem: number = 32) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const allElements = Array.from(svg.querySelectorAll('*'));
+  allElements.forEach(el => {
+    if (el.tagName === 'defs' || el.tagName === 'style') return;
+    try {
+      const bbox = (el as SVGGraphicsElement).getBBox?.();
+      if (bbox && bbox.width > 0 && bbox.height > 0) {
+        minX = Math.min(minX, bbox.x);
+        minY = Math.min(minY, bbox.y);
+        maxX = Math.max(maxX, bbox.x + bbox.width);
+        maxY = Math.max(maxY, bbox.y + bbox.height);
+      }
+    } catch {}
+  });
+  if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    return '0 0 400 100';
+  }
+  const padding = margem;
+  const x = minX - padding;
+  const y = minY - padding;
+  const w = (maxX - minX) + 2 * padding;
+  const h = (maxY - minY) + 2 * padding;
+  return `${x} ${y} ${w} ${h}`;
+}
 
 const TextPropertyControls: React.FC<{
   textType: 'companyName' | 'tagline';
@@ -113,8 +139,10 @@ export const ErrorBoundary: React.FC<{children: React.ReactNode}> = ({ children 
   return <>{children}</>;
 };
 
+const MARGEM = 32;
+
 const TypographyScreen: React.FC = () => {
-    // Optimize store selection to prevent excessive re-renders
+  // Optimize store selection to prevent excessive re-renders
   // Use individual selectors with custom equality checks
   const updateTextProperty = useLogoStore(state => state.updateTextProperty);
   const setTaglineEnabled = useLogoStore(state => state.setTaglineEnabled);
@@ -157,41 +185,96 @@ const TypographyScreen: React.FC = () => {
     }
   );
   
-  const getFinalSvgForExport = useLogoStore(state => state.getFinalSvgForExport);
+  const editedIconSvg = useLogoStore(state => state.editedIconSvg);
 
-  // Cache the SVG preview with useMemo to prevent infinite renders
-  // Use specific dependencies rather than whole objects
-  const finalSvgPreview = React.useMemo(() => {
-    try {
-      return getFinalSvgForExport();
-    } catch (error) {
-      console.error('Error generating SVG preview:', error);
-      return '<svg width="200" height="200" viewBox="0 0 100 100"><text x="50" y="50" text-anchor="middle" fill="red">Error rendering preview</text></svg>';
+  // Função utilitária para extrair apenas o conteúdo interno do SVG (sem a tag <svg>)
+  function getSvgInnerContent(svgString: string | null): string {
+    if (!svgString) return '';
+    const match = svgString.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+    return match ? match[1] : svgString;
+  }
+
+  const svgRef = useRef<SVGSVGElement>(null);
+  const { viewBox, resetView, handleWheel, handleMouseDown, handleMouseMove, handleMouseUp, handleMouseEnter } = useZoomPan(svgRef, { minZoom: 0.2, maxZoom: 4 });
+
+  // --- NOVO: Ajuste automático do viewBox para englobar todo o texto ---
+  useEffect(() => {
+    if (svgRef.current) {
+      // Novo: calcula o viewBox dinâmico para ícone + textos
+      const vb = getFullContentBoundsForTypography(svgRef.current, MARGEM);
+      if (vb) svgRef.current.setAttribute('viewBox', vb);
     }
+    // eslint-disable-next-line
   }, [
     companyName?.content,
     companyName?.fontFamily,
     companyName?.fontSize,
-    companyName?.fill,
-    companyName?.textAnchor,
     companyName?.x,
     companyName?.y,
     tagline?.content,
     tagline?.fontFamily,
     tagline?.fontSize,
-    tagline?.fill,
-    tagline?.textAnchor,
     tagline?.x,
     tagline?.y,
+    editedIconSvg
   ]);
-
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 md:gap-6 h-[calc(100vh-200px)] min-h-[600px] animate-fadeIn">
       <div className="lg:w-2/5 xl:w-1/2 flex flex-col space-y-4">
         <h2 className="text-3xl font-semibold text-center text-emerald-400 mb-2">Add Your Text</h2>
         <div className="flex-grow bg-slate-700 p-2 rounded-lg shadow-inner">
-            <EditingCanvas svgContent={finalSvgPreview} className="w-full max-h-[400px] md:max-h-[350px] object-contain"/>
+          {/* --- SVG flexível com pan/zoom, renderizando ícone + textos --- */}
+          <svg
+            ref={svgRef}
+            viewBox={viewBox}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseEnter={handleMouseEnter}
+            style={{ background: "#fff", borderRadius: 8, touchAction: "none" }}
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            {/* Renderiza o SVG do ícone editado (sem a tag <svg>) */}
+            {editedIconSvg && (
+              <g dangerouslySetInnerHTML={{ __html: getSvgInnerContent(editedIconSvg) }} />
+            )}
+            {/* Company Name */}
+            {companyName && companyName.content && (
+              <text
+                x={companyName.x}
+                y={companyName.y}
+                fontFamily={companyName.fontFamily}
+                fontSize={companyName.fontSize}
+                fill={companyName.fill}
+                textAnchor={companyName.textAnchor}
+                id="typography-companyName"
+              >
+                {companyName.content}
+              </text>
+            )}
+            {/* Tagline */}
+            {tagline && tagline.content && (
+              <text
+                x={tagline.x}
+                y={tagline.y}
+                fontFamily={tagline.fontFamily}
+                fontSize={tagline.fontSize}
+                fill={tagline.fill}
+                textAnchor={tagline.textAnchor}
+                id="typography-tagline"
+              >
+                {tagline.content}
+              </text>
+            )}
+          </svg>
+          <button
+            onClick={() => resetView()}
+            className="mt-2 px-4 py-1 bg-slate-600 hover:bg-slate-500 text-white rounded"
+          >
+            Resetar Zoom/Pan
+          </button>
         </div>
       </div>
 
@@ -213,7 +296,7 @@ const TypographyScreen: React.FC = () => {
           )}
         </div>
       </div>
-      
+
       <div className="w-full lg:col-span-full flex justify-between mt-4 items-center">
         <div>
           <button
@@ -230,8 +313,7 @@ const TypographyScreen: React.FC = () => {
             Next: Export Logo &rarr;
         </button>
       </div>
-      {/* Fix: Removed non-standard 'jsx' and 'global' attributes from style tag. Standard CSS-in-JS or a global CSS file is preferred for styles. */}
-       <style>{`
+      <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
@@ -242,4 +324,20 @@ const TypographyScreen: React.FC = () => {
   );
 };
 
+
+
 export default TypographyScreen;
+
+/**
+ * Calcula um viewBox que engloba todo o texto SVG, com margem extra.
+ */
+export function getDynamicViewBoxForTypography(svg: SVGSVGElement, margem: number = 32): string {
+  const text = svg.querySelector("text");
+  if (!text) return "0 0 400 100";
+  const bbox = text.getBBox();
+  const x = bbox.x - margem;
+  const y = bbox.y - margem;
+  const w = bbox.width + 2 * margem;
+  const h = bbox.height + 2 * margem;
+  return `${x} ${y} ${w} ${h}`;
+}

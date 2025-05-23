@@ -1,0 +1,1731 @@
+Data de exportação: 23/05 às 01:30
+Mapeamento de arquivos alterados/adicionados:
+1. components/EditingCanvas.tsx
+2. components/EnhancedEditingCanvas.tsx
+3. components/PropertiesPanel.tsx
+4. hooks/useZoomPan.ts
+5. package.json
+6. screens/TypographyScreen.tsx
+7. store/logoStore.ts
+8. types.ts
+9. utils/exportUtils.ts
+10. utils/svgUtils.ts
+11. src/
+
+Mapeamento completo de arquivos (com pastas e subpastas):
+1. .\.env.local
+2. .\.gitignore
+3. .\App.tsx
+4. .\README.md
+5. .\alterados_23-05_01-30.txt
+6. .\components\ColorPicker.tsx
+7. .\components\EditingCanvas.tsx
+8. .\components\EnhancedEditingCanvas.tsx
+9. .\components\GlobalPalettes.tsx
+10. .\components\PropertiesPanel.tsx
+11. .\components\ShapePropertiesControls.tsx
+12. .\components\TemplateCard.tsx
+13. .\components\TransformControls.tsx
+14. .\constants.ts
+15. .\data\colorPalettes.ts
+16. .\data\fonts.ts
+17. .\data\svgTemplates.ts
+18. .\exportar_alterados.py
+19. .\exportar_tudo.py
+20. .\hooks\useZoomPan.ts
+21. .\index.css
+22. .\index.html
+23. .\index.tsx
+24. .\mapear_arquivos.py
+25. .\metadata.json
+26. .\package-lock.json
+27. .\package.json
+28. .\pnpm-lock.yaml
+29. .\postcss.config.js
+30. .\screens\EditorScreen.tsx
+31. .\screens\ExportScreen.tsx
+32. .\screens\TemplateSelectionScreen.tsx
+33. .\screens\TypographyScreen.tsx
+34. .\services\ViewBoxManager.ts
+35. .\src\screens\TypographyScreen.tsx
+36. .\store\logoStore.ts
+37. .\tailwind.config.js
+38. .\tsconfig.json
+39. .\types.ts
+40. .\utils\exportUtils.ts
+41. .\utils\svgUtils.ts
+42. .\vite.config.ts
+43. .\wiki.md
+
+
+--- [1] components/EditingCanvas.tsx ---
+import React, { useRef, useEffect, useState } from 'react';
+import { useLogoStore } from '../store/logoStore';
+import { SVG_EDITABLE_CLASS } from '../constants';
+import { applyTempHighlightToSvgElement } from '../utils/svgUtils';
+
+
+interface EditingCanvasProps {
+  svgContent: string | null;
+  className?: string;
+}
+
+const EditingCanvas: React.FC<EditingCanvasProps> = ({ svgContent: rawSvgContent, className }) => {
+  const setSelectedElementId = useLogoStore((state) => state.setSelectedElementId);
+  const selectedElementId = useLogoStore((state) => state.selectedElementId);
+  const svgContainerRef = useRef<HTMLDivElement>(null);
+  const [displaySvg, setDisplaySvg] = useState<string | null>(rawSvgContent);
+
+  useEffect(() => {
+    let currentSvg = rawSvgContent;
+    if (selectedElementId && currentSvg) {
+      currentSvg = applyTempHighlightToSvgElement(currentSvg, selectedElementId, { stroke: 'rgb(34 197 94)', strokeWidth: '1px', strokeDasharray:'2 2'});
+    }
+    setDisplaySvg(currentSvg);
+    
+    // Cleanup previous highlight if selectedElementId changes or rawSvgContent changes
+    return () => {
+      if (rawSvgContent && selectedElementId) {
+        // This is tricky because rawSvgContent might already be the new one.
+        // Ideally, applyTempHighlight should be idempotent or we store the "clean" version.
+        // For now, this effect re-applies based on current selectedElementId.
+      }
+    };
+
+  }, [rawSvgContent, selectedElementId]);
+
+
+  const handleSvgClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    // Fix: Changed target type to Node | null for broader compatibility and correct traversal.
+    let currentTargetNode: Node | null = event.target as Node;
+    
+    // Traverse up if the click was on a child within an editable group (e.g. <tspan> in <text>)
+    // Fix: Loop condition is now type-safe as currentTargetNode is Node | null and svgContainerRef.current is HTMLDivElement | null.
+    while(currentTargetNode && currentTargetNode !== svgContainerRef.current) {
+      // Fix: Check if the current node is an SVGElement and has the required properties.
+      if (currentTargetNode instanceof SVGElement && 
+          currentTargetNode.classList && // classList is on Element, SVGElement extends Element
+          currentTargetNode.classList.contains(SVG_EDITABLE_CLASS) && 
+          currentTargetNode.id) {
+        setSelectedElementId(currentTargetNode.id);
+        return;
+      }
+      // Fix: Use parentNode for DOM traversal; result is Node | null, which matches currentTargetNode type.
+      currentTargetNode = currentTargetNode.parentNode;
+    }
+    // If clicked on background or non-editable part
+    setSelectedElementId(null);
+  };
+  
+  if (!displaySvg) {
+    return (
+      <div className={`flex items-center justify-center bg-slate-700 rounded-lg aspect-square ${className || 'w-full h-auto'}`}>
+        <p className="text-slate-400">No logo loaded.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={svgContainerRef}
+      className={`p-4 bg-slate-700 rounded-lg shadow-inner flex items-center justify-center ${className || 'w-full h-auto'}`}
+      onClick={handleSvgClick}
+      dangerouslySetInnerHTML={{ __html: displaySvg }}
+      style={{ 
+        touchAction: 'none',
+        overflow: 'hidden',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}
+    />
+  );
+};
+
+export default EditingCanvas;
+
+--- [2] components/EnhancedEditingCanvas.tsx ---
+import React, { useEffect, useRef } from 'react';
+import useZoomPan from '../hooks/useZoomPan';
+import { useLogoStore } from '../store/logoStore';
+
+// Adicione ou ajuste conforme seu projeto:
+export const SVG_EDITABLE_CLASS = "svg-editable-element";
+
+interface EnhancedEditingCanvasProps {
+  svgContent: string;
+  className?: string;
+}
+
+const EnhancedEditingCanvas: React.FC<EnhancedEditingCanvasProps> = ({ 
+  svgContent, 
+  className = ''
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const selectedElementId = useLogoStore(state => state.selectedElementId);
+  const setSelectedElementId = useLogoStore(state => state.setSelectedElementId);
+  
+  // Parse the SVG content once
+  const parser = new DOMParser();
+  
+  // Set up zoom and pan functionality
+  const svgRef = useRef<SVGSVGElement>(null);
+  const { svgRef: panRef, viewBox, zoomLevel, resetView } = useZoomPan(svgRef, {
+    minZoom: 0.1,
+    maxZoom: 10,
+    zoomFactor: 0.1
+  });
+
+  // Seleção: só permite selecionar elementos com id e classe SVG_EDITABLE_CLASS
+  const handleElementClick = (e: React.MouseEvent) => {
+    const target = e.target as SVGElement;
+    let currentElement: Element | null = target;
+    while (
+      currentElement &&
+      (!(currentElement as SVGElement).id ||
+        !(currentElement as SVGElement).classList.contains(SVG_EDITABLE_CLASS)) &&
+      currentElement !== svgRef.current
+    ) {
+      currentElement = currentElement.parentElement ? (currentElement.parentElement as unknown as SVGElement) : null;
+    }
+    if (
+      currentElement &&
+      (currentElement as SVGElement).id &&
+      (currentElement as SVGElement).classList.contains(SVG_EDITABLE_CLASS) &&
+      currentElement !== svgRef.current
+    ) {
+      e.stopPropagation(); // Prevent event bubbling to container
+      setSelectedElementId((currentElement as SVGElement).id);
+    }
+  };
+
+  // Reset selection when clicking the background
+  const handleBackgroundClick = () => {
+    setSelectedElementId(null);
+  };
+  
+  // Create the Enhanced SVG with zoom/pan capabilities by combining original SVG content
+  const createEnhancedSvg = () => {
+    if (!svgContent) return '';
+    
+    try {
+      // Ensures we're working with the latest parsed SVG
+      const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
+      const svgElement = svgDoc.documentElement;
+      
+      // Remove any existing viewBox to use our managed one
+      svgElement.removeAttribute('viewBox');
+      
+      // Garante que elementos editáveis tenham a classe correta
+      svgElement.querySelectorAll('[id]').forEach(el => {
+        if (!el.classList.contains(SVG_EDITABLE_CLASS)) {
+          el.classList.add(SVG_EDITABLE_CLASS);
+        }
+      });
+      
+      // Parse SVG content to HTML string
+      const svgInnerHTML = new XMLSerializer().serializeToString(svgElement);
+      
+      // Return just the inner content (without the outer <svg> tag)
+      return svgInnerHTML
+        // Remove the opening svg tag
+        .replace(/<svg[^>]*>/, '')
+        // Remove the closing svg tag
+        .replace(/<\/svg>$/, '');
+    } catch (error) {
+      console.error('Error parsing SVG:', error);
+      return '';
+    }
+  };
+  
+  // Get the SVG content without the outer <svg> tag
+  const enhancedSvgContent = createEnhancedSvg();
+
+  return (
+    <div className="relative flex flex-col w-full h-full">
+      {/* Toolbar */}
+      <div className="flex justify-between p-2 bg-slate-100 dark:bg-slate-800 rounded-t-lg">
+        <div className="flex space-x-2">
+          <button 
+            onClick={resetView}
+            className="px-3 py-1 text-sm bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-md transition-colors"
+          >
+            Reset View
+          </button>
+        </div>
+        <div className="text-sm text-slate-500 dark:text-slate-400">
+          Zoom: {Math.round(zoomLevel * 100)}%
+        </div>
+      </div>
+
+      {/* SVG Container */}
+      <div 
+        ref={containerRef} 
+        className={`flex-grow bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 overflow-hidden relative ${className}`}
+        onClick={handleBackgroundClick}
+      >
+        <svg
+          ref={panRef}
+          viewBox={viewBox}
+          xmlns="http://www.w3.org/2000/svg"
+          className="w-full h-full cursor-grab"
+          preserveAspectRatio="xMidYMid meet"
+          onClick={handleElementClick}
+          dangerouslySetInnerHTML={{ __html: enhancedSvgContent }}
+        ></svg>
+        
+        {/* Selection Indicator */}
+        {selectedElementId && svgRef.current && (
+          <svg
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              pointerEvents: "none",
+              width: "100%",
+              height: "100%",
+              zIndex: 10,
+            }}
+            viewBox={viewBox}
+          >
+            <SelectionHighlight
+              svgRef={svgRef}
+              selectedElementId={selectedElementId}
+            />
+          </svg>
+        )}
+      </div>
+      
+      {/* Info Footer */}
+      <div className="p-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-b-lg">
+        <p>Drag to pan • Scroll to zoom • Click to select elements</p>
+      </div>
+    </div>
+  );
+};
+
+// Helper component to highlight selected SVG elements
+interface SelectionHighlightProps {
+  svgRef: React.RefObject<SVGSVGElement>;
+  selectedElementId: string;
+}
+
+const SelectionHighlight: React.FC<SelectionHighlightProps> = ({ svgRef, selectedElementId }) => {
+  const highlightRef = useRef<SVGRectElement>(null);
+
+  useEffect(() => {
+    if (!svgRef.current || !highlightRef.current) return;
+    const selectedElement = svgRef.current.getElementById(selectedElementId);
+    if (selectedElement) {
+      try {
+        // Corrigir tipo para acessar getBBox
+        const bbox = (selectedElement as SVGGraphicsElement).getBBox();
+        const transform = selectedElement.getAttribute('transform');
+        const highlight = highlightRef.current;
+        highlight.setAttribute('x', String(bbox.x));
+        highlight.setAttribute('y', String(bbox.y));
+        highlight.setAttribute('width', String(bbox.width));
+        highlight.setAttribute('height', String(bbox.height));
+        if (transform) {
+          highlight.setAttribute('transform', transform);
+        } else {
+          highlight.removeAttribute('transform');
+        }
+      } catch (err) {
+        console.error('Error updating selection highlight:', err);
+      }
+    }
+  }, [selectedElementId, svgRef]);
+
+  // Don't render until svgRef is available
+  if (!svgRef.current) return null;
+  
+  return (
+    <rect
+      ref={highlightRef}
+      x="0"
+      y="0"
+      width="0"
+      height="0"
+      fill="none"
+      stroke="#3b82f6"
+      strokeWidth="1"
+      strokeDasharray="4 2"
+      pointerEvents="none"
+    />
+  );
+};
+
+export default EnhancedEditingCanvas;
+
+--- [3] components/PropertiesPanel.tsx ---
+import React from 'react';
+import { useLogoStore } from '../store/logoStore';
+import ShapePropertiesControls from './ShapePropertiesControls';
+import TransformControls from './TransformControls';
+import GlobalPalettes from './GlobalPalettes';
+
+const PropertiesPanel: React.FC = () => {
+  const selectedElementId = useLogoStore((state) => state.selectedElementId);
+  const elementsProps = useLogoStore((state) => state.elementsProps);
+  const updateElementProperty = useLogoStore((state) => state.updateElementProperty);
+
+  const selectedElementProps = selectedElementId ? elementsProps[selectedElementId] : null;
+
+  return (
+    <div className="w-full lg:w-80 bg-slate-800 p-1 md:p-3 rounded-lg shadow-lg h-full overflow-y-auto space-y-6">
+      <GlobalPalettes />
+      {selectedElementId && selectedElementProps ? (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold text-emerald-400 mb-2 border-b border-slate-700 pb-2">
+              Element: <span className="text-slate-300 font-mono text-sm">{selectedElementId}</span>
+            </h3>
+            <ShapePropertiesControls
+              elementId={selectedElementId}
+              properties={selectedElementProps}
+              updateProperty={updateElementProperty}
+            />
+          </div>
+          <div>
+             <h3 className="text-lg font-semibold text-emerald-400 mb-2 border-b border-slate-700 pb-2">Transform</h3>
+            <TransformControls
+              transform={selectedElementProps.transform || {}}
+              elementId={selectedElementId}
+              updateProperty={updateElementProperty}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="text-center text-slate-400 p-6 bg-slate-700 rounded-md">
+          <p className="text-lg font-medium">Select an element on the canvas to edit its properties.</p>
+          <p className="text-sm mt-2">Click on any shape in your logo to begin customization.</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PropertiesPanel;
+
+
+--- [4] hooks/useZoomPan.ts ---
+import { useRef, useCallback, useEffect } from "react";
+import { useLogoStore } from "../store/logoStore";
+import { ViewBox } from "../types";
+
+function viewBoxToString(vb: ViewBox | null): string {
+  if (!vb) return "0 0 100 100";
+  return `${vb.x} ${vb.y} ${vb.width} ${vb.height}`;
+}
+
+interface UseZoomPanOptions {
+  minZoom?: number;
+  maxZoom?: number;
+  zoomFactor?: number;
+}
+
+/**
+ * Custom hook for handling zoom and pan interactions with an SVG element
+ */
+export default function useZoomPan(
+  svgRef: React.RefObject<SVGSVGElement>,
+  {
+    minZoom = 0.1,
+    maxZoom = 10,
+    zoomFactor = 0.1,
+  }: UseZoomPanOptions = {}
+) {
+  const currentViewBox = useLogoStore((s) => s.currentViewBox);
+  const zoomLevel = useLogoStore((s) => s.zoomLevel);
+  // Funções de atualização do Zustand (sempre disponíveis)
+  const setCurrentViewBox = useLogoStore((s) => s.setCurrentViewBox);
+  const setZoomLevel = useLogoStore((s) => s.setZoomLevel);
+
+  const isPanning = useRef(false);
+  const lastMouse = useRef({ x: 0, y: 0 });
+
+  // Handle mouse wheel for zooming
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<SVGSVGElement>) => {
+      if (!svgRef.current || !currentViewBox) return;
+      e.preventDefault();
+      const direction = e.deltaY < 0 ? 1 + zoomFactor : 1 - zoomFactor;
+      let newZoom = Math.max(minZoom, Math.min(maxZoom, zoomLevel * direction));
+      const rect = svgRef.current.getBoundingClientRect();
+      const mouseX = ((e.clientX - rect.left) / rect.width) * currentViewBox.width + currentViewBox.x;
+      const mouseY = ((e.clientY - rect.top) / rect.height) * currentViewBox.height + currentViewBox.y;
+      const newWidth = currentViewBox.width / direction;
+      const newHeight = currentViewBox.height / direction;
+      const relX = (mouseX - currentViewBox.x) / currentViewBox.width;
+      const relY = (mouseY - currentViewBox.y) / currentViewBox.height;
+      const newX = mouseX - relX * newWidth;
+      const newY = mouseY - relY * newHeight;
+      setCurrentViewBox({
+        x: newX,
+        y: newY,
+        width: newWidth,
+        height: newHeight,
+      });
+      setZoomLevel(newZoom);
+    },
+    [svgRef, currentViewBox, zoomLevel, minZoom, maxZoom, zoomFactor, setCurrentViewBox, setZoomLevel]
+  );
+
+  // Start panning
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (e.button !== 0) return;
+      isPanning.current = true;
+      lastMouse.current = { x: e.clientX, y: e.clientY };
+      if (svgRef.current) svgRef.current.style.cursor = "grabbing";
+    },
+    [svgRef]
+  );
+
+  // Handle panning motion
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!isPanning.current || !svgRef.current || !currentViewBox) return;
+      const dx = e.clientX - lastMouse.current.x;
+      const dy = e.clientY - lastMouse.current.y;
+      const rect = svgRef.current.getBoundingClientRect();
+      const scaleX = currentViewBox.width / rect.width;
+      const scaleY = currentViewBox.height / rect.height;
+      setCurrentViewBox({
+        ...currentViewBox,
+        x: currentViewBox.x - dx * scaleX,
+        y: currentViewBox.y - dy * scaleY,
+      });
+      lastMouse.current = { x: e.clientX, y: e.clientY };
+    },
+    [svgRef, currentViewBox, setCurrentViewBox]
+  );
+
+  // End panning
+  const handleMouseUp = useCallback(() => {
+    isPanning.current = false;
+    if (svgRef.current) svgRef.current.style.cursor = "grab";
+  }, [svgRef]);
+
+  // Enable pointer events
+  const handleMouseEnter = useCallback(() => {
+    if (!isPanning.current && svgRef.current) svgRef.current.style.cursor = "grab";
+  }, [svgRef]);
+
+  useEffect(() => {
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => window.removeEventListener("mouseup", handleMouseUp);
+  }, [handleMouseUp]);
+
+  const resetView = useCallback(() => {
+    setCurrentViewBox({ x: 0, y: 0, width: 100, height: 100 });
+    setZoomLevel(1);
+  }, [setCurrentViewBox, setZoomLevel]);
+
+  // Attach React event handlers (not native DOM listeners)
+  return {
+    svgRef,
+    viewBox: viewBoxToString(currentViewBox),
+    zoomLevel,
+    handleWheel,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    handleMouseEnter,
+    resetView,
+  };
+}
+
+--- [5] package.json ---
+{
+  "name": "geometric-logo-platform",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.24",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwindcss": "^3.3.2",
+    "zustand": "^4.3.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.3.1",
+    "@types/react": "^18.2.14",
+    "@types/react-dom": "^18.2.6",
+    "@typescript-eslint/eslint-plugin": "^5.60.0",
+    "@typescript-eslint/parser": "^5.60.0",
+    "@vitejs/plugin-react": "^4.0.1",
+    "eslint": "^8.43.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.1",
+    "typescript": "^5.1.3",
+    "vite": "^4.3.9"
+  }
+}
+
+
+--- [6] screens/TypographyScreen.tsx ---
+import React, { useRef, useEffect } from 'react';
+import { useLogoStore } from '../store/logoStore';
+import { Screen, TextProperties } from '../types';
+import { DEFAULT_FONTS, MIN_FONT_SIZE, MAX_FONT_SIZE } from '../constants';
+import ColorPicker from '../components/ColorPicker';
+import useZoomPan from '../hooks/useZoomPan';
+
+// Função utilitária para calcular o bounding box de todo o conteúdo SVG (ícone + textos)
+function getFullContentBoundsForTypography(svg: SVGSVGElement, margem: number = 32) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const allElements = Array.from(svg.querySelectorAll('*'));
+  allElements.forEach(el => {
+    if (el.tagName === 'defs' || el.tagName === 'style') return;
+    try {
+      const bbox = (el as SVGGraphicsElement).getBBox?.();
+      if (bbox && bbox.width > 0 && bbox.height > 0) {
+        minX = Math.min(minX, bbox.x);
+        minY = Math.min(minY, bbox.y);
+        maxX = Math.max(maxX, bbox.x + bbox.width);
+        maxY = Math.max(maxY, bbox.y + bbox.height);
+      }
+    } catch {}
+  });
+  if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    return '0 0 400 100';
+  }
+  const padding = margem;
+  const x = minX - padding;
+  const y = minY - padding;
+  const w = (maxX - minX) + 2 * padding;
+  const h = (maxY - minY) + 2 * padding;
+  return `${x} ${y} ${w} ${h}`;
+}
+
+const TextPropertyControls: React.FC<{
+  textType: 'companyName' | 'tagline';
+  textProps: TextProperties;
+  updateProperty: (textType: 'companyName' | 'tagline', property: keyof TextProperties, value: any) => void;
+  title: string;
+}> = ({ textType, textProps, updateProperty, title }) => {
+  return (
+    <div className="p-4 bg-slate-700 rounded-lg shadow mb-6">
+      <h3 className="text-xl font-semibold text-emerald-400 mb-3">{title}</h3>
+      <div className="space-y-4">
+        <div>
+          <label htmlFor={`${textType}-content`} className="block text-sm font-medium text-slate-300 mb-1">Text</label>
+          <input
+            type="text"
+            id={`${textType}-content`}
+            value={textProps.content}
+            onChange={(e) => updateProperty(textType, 'content', e.target.value)}
+            className="w-full p-2 bg-slate-600 border border-slate-500 rounded-md focus:ring-emerald-500 focus:border-emerald-500"
+          />
+        </div>
+        <div>
+          <label htmlFor={`${textType}-fontFamily`} className="block text-sm font-medium text-slate-300 mb-1">Font</label>
+          <select
+            id={`${textType}-fontFamily`}
+            value={textProps.fontFamily}
+            onChange={(e) => updateProperty(textType, 'fontFamily', e.target.value)}
+            className="w-full p-2 bg-slate-600 border border-slate-500 rounded-md focus:ring-emerald-500 focus:border-emerald-500"
+          >
+            {DEFAULT_FONTS.map(font => (
+              <option key={font.name} value={font.family} style={{ fontFamily: font.family }}>{font.name}</option>
+            ))}
+          </select>
+        </div>
+        <ColorPicker
+          label="Text Color"
+          color={textProps.fill}
+          onChange={(color) => updateProperty(textType, 'fill', color)}
+        />
+        <div>
+          <label htmlFor={`${textType}-fontSize`} className="block text-sm font-medium text-slate-300 mb-1">Font Size ({textProps.fontSize}px)</label>
+          <input
+            type="range"
+            id={`${textType}-fontSize`}
+            min={MIN_FONT_SIZE}
+            max={MAX_FONT_SIZE}
+            value={textProps.fontSize}
+            onChange={(e) => updateProperty(textType, 'fontSize', parseInt(e.target.value))}
+            className="w-full h-2 bg-slate-500 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+            <div>
+                <label htmlFor={`${textType}-x`} className="block text-sm font-medium text-slate-300 mb-1">Position X (%)</label>
+                <input type="number" id={`${textType}-x`} value={textProps.x} onChange={(e) => updateProperty(textType, 'x', parseFloat(e.target.value))}
+                className="w-full p-2 bg-slate-600 border border-slate-500 rounded-md focus:ring-emerald-500 focus:border-emerald-500" step="0.5" />
+            </div>
+            <div>
+                <label htmlFor={`${textType}-y`} className="block text-sm font-medium text-slate-300 mb-1">Position Y (%)</label>
+                <input type="number" id={`${textType}-y`} value={textProps.y} onChange={(e) => updateProperty(textType, 'y', parseFloat(e.target.value))}
+                className="w-full p-2 bg-slate-600 border border-slate-500 rounded-md focus:ring-emerald-500 focus:border-emerald-500" step="0.5" />
+            </div>
+        </div>
+        <div>
+            <label htmlFor={`${textType}-textAnchor`} className="block text-sm font-medium text-slate-300 mb-1">Text Align</label>
+            <select id={`${textType}-textAnchor`} value={textProps.textAnchor} onChange={(e) => updateProperty(textType, 'textAnchor', e.target.value as TextProperties['textAnchor'])}
+            className="w-full p-2 bg-slate-600 border border-slate-500 rounded-md focus:ring-emerald-500 focus:border-emerald-500">
+                <option value="start">Left</option>
+                <option value="middle">Center</option>
+                <option value="end">Right</option>
+            </select>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Error boundary component to catch errors in the component
+export const ErrorBoundary: React.FC<{children: React.ReactNode}> = ({ children }) => {
+  const [hasError, setHasError] = React.useState(false);
+  
+  React.useEffect(() => {
+    const handleError = () => {
+      setHasError(true);
+    };
+    
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  }, []);
+  
+  if (hasError) {
+    return (
+      <div className="p-4 bg-red-500 text-white rounded-lg">
+        <h3 className="text-xl font-bold">Something went wrong</h3>
+        <p>There was an error rendering this component. Please try again or go back to the previous step.</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="mt-4 px-4 py-2 bg-white text-red-500 rounded-lg font-medium"
+        >
+          Reload Page
+        </button>
+      </div>
+    );
+  }
+  
+  return <>{children}</>;
+};
+
+const MARGEM = 32;
+
+const TypographyScreen: React.FC = () => {
+  // Optimize store selection to prevent excessive re-renders
+  // Use individual selectors with custom equality checks
+  const updateTextProperty = useLogoStore(state => state.updateTextProperty);
+  const setTaglineEnabled = useLogoStore(state => state.setTaglineEnabled);
+  const setScreen = useLogoStore(state => state.setScreen);
+  
+  // For data properties, use shallow comparison or targeted comparison to reduce re-renders
+  const companyName = useLogoStore(
+    state => state.companyName, 
+    (prev, next) => {
+      if (!prev && !next) return true;
+      if (!prev || !next) return false;
+      // Only compare the fields that will affect the UI
+      return (
+        prev.content === next.content &&
+        prev.fontFamily === next.fontFamily &&
+        prev.fontSize === next.fontSize &&
+        prev.fill === next.fill &&
+        prev.textAnchor === next.textAnchor &&
+        prev.x === next.x &&
+        prev.y === next.y
+      );
+    }
+  );
+  
+  const tagline = useLogoStore(
+    state => state.tagline,
+    (prev, next) => {
+      if (!prev && !next) return true;
+      if (!prev || !next) return false;
+      // Only compare the fields that will affect the UI
+      return (
+        prev.content === next.content &&
+        prev.fontFamily === next.fontFamily &&
+        prev.fontSize === next.fontSize &&
+        prev.fill === next.fill &&
+        prev.textAnchor === next.textAnchor &&
+        prev.x === next.x &&
+        prev.y === next.y
+      );
+    }
+  );
+  
+  const editedIconSvg = useLogoStore(state => state.editedIconSvg);
+
+  // Função utilitária para extrair apenas o conteúdo interno do SVG (sem a tag <svg>)
+  function getSvgInnerContent(svgString: string | null): string {
+    if (!svgString) return '';
+    const match = svgString.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+    return match ? match[1] : svgString;
+  }
+
+  const svgRef = useRef<SVGSVGElement>(null);
+  const { viewBox, resetView, handleWheel, handleMouseDown, handleMouseMove, handleMouseUp, handleMouseEnter } = useZoomPan(svgRef, { minZoom: 0.2, maxZoom: 4 });
+
+  // --- NOVO: Ajuste automático do viewBox para englobar todo o texto ---
+  useEffect(() => {
+    if (svgRef.current) {
+      // Novo: calcula o viewBox dinâmico para ícone + textos
+      const vb = getFullContentBoundsForTypography(svgRef.current, MARGEM);
+      if (vb) svgRef.current.setAttribute('viewBox', vb);
+    }
+    // eslint-disable-next-line
+  }, [
+    companyName?.content,
+    companyName?.fontFamily,
+    companyName?.fontSize,
+    companyName?.x,
+    companyName?.y,
+    tagline?.content,
+    tagline?.fontFamily,
+    tagline?.fontSize,
+    tagline?.x,
+    tagline?.y,
+    editedIconSvg
+  ]);
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-4 md:gap-6 h-[calc(100vh-200px)] min-h-[600px] animate-fadeIn">
+      <div className="lg:w-2/5 xl:w-1/2 flex flex-col space-y-4">
+        <h2 className="text-3xl font-semibold text-center text-emerald-400 mb-2">Add Your Text</h2>
+        <div className="flex-grow bg-slate-700 p-2 rounded-lg shadow-inner">
+          {/* --- SVG flexível com pan/zoom, renderizando ícone + textos --- */}
+          <svg
+            ref={svgRef}
+            viewBox={viewBox}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseEnter={handleMouseEnter}
+            style={{ background: "#fff", borderRadius: 8, touchAction: "none" }}
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            {/* Renderiza o SVG do ícone editado (sem a tag <svg>) */}
+            {editedIconSvg && (
+              <g dangerouslySetInnerHTML={{ __html: getSvgInnerContent(editedIconSvg) }} />
+            )}
+            {/* Company Name */}
+            {companyName && companyName.content && (
+              <text
+                x={companyName.x}
+                y={companyName.y}
+                fontFamily={companyName.fontFamily}
+                fontSize={companyName.fontSize}
+                fill={companyName.fill}
+                textAnchor={companyName.textAnchor}
+                id="typography-companyName"
+              >
+                {companyName.content}
+              </text>
+            )}
+            {/* Tagline */}
+            {tagline && tagline.content && (
+              <text
+                x={tagline.x}
+                y={tagline.y}
+                fontFamily={tagline.fontFamily}
+                fontSize={tagline.fontSize}
+                fill={tagline.fill}
+                textAnchor={tagline.textAnchor}
+                id="typography-tagline"
+              >
+                {tagline.content}
+              </text>
+            )}
+          </svg>
+          <button
+            onClick={() => resetView()}
+            className="mt-2 px-4 py-1 bg-slate-600 hover:bg-slate-500 text-white rounded"
+          >
+            Resetar Zoom/Pan
+          </button>
+        </div>
+      </div>
+
+      <div className="lg:w-3/5 xl:w-1/2 space-y-6 overflow-y-auto max-h-[calc(100vh-240px)] pr-2">
+        <TextPropertyControls title="Company Name" textType="companyName" textProps={companyName} updateProperty={updateTextProperty} />
+        
+        <div>
+          <label className="flex items-center space-x-2 mb-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!tagline}
+              onChange={(e) => setTaglineEnabled(e.target.checked)}
+              className="form-checkbox h-5 w-5 text-emerald-500 bg-slate-600 border-slate-500 rounded focus:ring-emerald-400"
+            />
+            <span className="text-slate-200">Enable Tagline</span>
+          </label>
+          {tagline && (
+            <TextPropertyControls title="Tagline" textType="tagline" textProps={tagline} updateProperty={updateTextProperty} />
+          )}
+        </div>
+      </div>
+
+      <div className="w-full lg:col-span-full flex justify-between mt-4 items-center">
+        <div>
+          <button
+              onClick={() => setScreen(Screen.Editor)}
+              className="px-6 py-3 bg-slate-600 hover:bg-slate-500 text-white font-semibold rounded-lg shadow-md transition-colors text-lg"
+          >
+              &larr; Back to Icon
+          </button>
+        </div>
+        <button
+            onClick={() => setScreen(Screen.Export)}
+            className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg shadow-md transition-colors text-lg"
+        >
+            Next: Export Logo &rarr;
+        </button>
+      </div>
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+      `}</style>
+    </div>
+  );
+};
+
+
+
+export default TypographyScreen;
+
+/**
+ * Calcula um viewBox que engloba todo o texto SVG, com margem extra.
+ */
+export function getDynamicViewBoxForTypography(svg: SVGSVGElement, margem: number = 32): string {
+  const text = svg.querySelector("text");
+  if (!text) return "0 0 400 100";
+  const bbox = text.getBBox();
+  const x = bbox.x - margem;
+  const y = bbox.y - margem;
+  const w = bbox.width + 2 * margem;
+  const h = bbox.height + 2 * margem;
+  return `${x} ${y} ${w} ${h}`;
+}
+
+--- [7] store/logoStore.ts ---
+import { create } from 'zustand';
+import { LogoProjectState, Screen, TextProperties, PALETTE_CLASS_MAP, SVGElementProperties, ViewBox } from '../types';
+import { INITIAL_SCREEN, DEFAULT_FONTS, DEFAULT_TEXT_COLOR, DEFAULT_FONT_SIZE } from '../constants';
+import { PREDEFINED_PALETTES } from '../data/colorPalettes';
+import { SVG_TEMPLATES } from '../data/svgTemplates';
+import { 
+  applyElementPropertiesToSvg, 
+  extractInitialElementsProperties,
+  addTextElementsToSvg,
+  getViewBox,
+} from '../utils/svgUtils';
+
+const initialTextProps = (content: string, yPos: number): TextProperties => ({
+  content,
+  fontFamily: DEFAULT_FONTS[0].family,
+  fontSize: DEFAULT_FONT_SIZE,
+  fill: DEFAULT_TEXT_COLOR,
+  x: 50, // Center X for viewBox 0 0 100 100, textAnchor middle
+  y: yPos, // Placeholder Y
+  textAnchor: 'middle',
+});
+
+const useLogoStore = create<LogoProjectState>((set, get) => ({
+  currentScreen: INITIAL_SCREEN,
+  templates: SVG_TEMPLATES,
+  selectedTemplateId: null,
+  originalIconSvg: null,
+  editedIconSvg: null,
+  elementsProps: {},
+  selectedElementId: null,
+  globalPalettes: PREDEFINED_PALETTES,
+  selectedPaletteName: PREDEFINED_PALETTES[0]?.name || null,
+  companyName: initialTextProps("Company Name", 80),
+  tagline: null, // Initially disabled
+  zoomLevel: 1, // Default zoom level
+  currentViewBox: null, // Adicionada propriedade obrigatória currentViewBox ao estado inicial
+
+  setScreen: (screen) => set({ currentScreen: screen }),
+  loadTemplates: (templates) => set({ templates }),
+
+  selectTemplate: (templateId) => {
+    const template = get().templates.find(t => t.id === templateId);
+    if (template) {
+      const initialProps = extractInitialElementsProperties(template.svgContent);
+      const editedSvg = applyElementPropertiesToSvg(template.svgContent, initialProps);
+      
+      // Adjust initial text positions based on viewBox
+      const viewBox = getViewBox(template.svgContent) || { x: 0, y: 0, width: 100, height: 100 };
+      const companyNameY = viewBox.y + viewBox.height * 0.85;
+      const taglineY = viewBox.y + viewBox.height * 0.95;
+
+      set({
+        selectedTemplateId: templateId,
+        originalIconSvg: template.svgContent,
+        elementsProps: initialProps,
+        editedIconSvg: editedSvg, 
+        currentScreen: Screen.Editor,
+        selectedElementId: null, // Reset selected element
+        companyName: initialTextProps("Company Name", companyNameY),
+        tagline: get().tagline ? initialTextProps("Your awesome tagline", taglineY) : null,
+        // Initialize ViewBox with the template's default ViewBox
+        zoomLevel: 1 // Reset zoom level when selecting a new template
+      });
+    }
+  },
+
+  setSelectedElementId: (elementId) => set({ selectedElementId: elementId }),
+
+  updateElementProperty: (elementId, propertyPath, value) => {
+    set((state) => {
+      const newElementsProps = JSON.parse(JSON.stringify(state.elementsProps)); // Deep clone
+      const props = newElementsProps[elementId] || {};
+      
+      // Handle nested transform properties
+      const pathParts = propertyPath.split('.');
+      let currentLevel = props;
+      for (let i = 0; i < pathParts.length - 1; i++) {
+        if (!currentLevel[pathParts[i]]) {
+          currentLevel[pathParts[i]] = {};
+        }
+        currentLevel = currentLevel[pathParts[i]];
+      }
+      currentLevel[pathParts[pathParts.length - 1]] = value;
+      
+      newElementsProps[elementId] = props;
+
+      if (state.originalIconSvg) {
+        const newEditedIconSvg = applyElementPropertiesToSvg(state.originalIconSvg, newElementsProps);
+        return { elementsProps: newElementsProps, editedIconSvg: newEditedIconSvg };
+      }
+      return { elementsProps: newElementsProps };
+    });
+  },
+  
+  applyGlobalPalette: (paletteName) => {
+    set(state => {
+      const palette = state.globalPalettes.find(p => p.name === paletteName);
+      if (!palette || !state.originalIconSvg) return {};
+
+      // Create a new set of element properties based on the palette
+      const newElementsProps = { ...state.elementsProps };
+      const tempDoc = new DOMParser().parseFromString(state.originalIconSvg, "image/svg+xml");
+
+      Object.keys(PALETTE_CLASS_MAP).forEach(className => {
+        const colorKey = PALETTE_CLASS_MAP[className];
+        const colorValue = palette.colors[colorKey];
+        if (colorValue) {
+          tempDoc.querySelectorAll(`.${className}`).forEach(element => {
+            const elId = element.id;
+            if (elId) {
+              if (!newElementsProps[elId]) newElementsProps[elId] = {} as Partial<SVGElementProperties>;
+              if (!newElementsProps[elId]!.transform) { // Ensure transform object exists
+                 const existingProps = extractInitialElementsProperties(state.originalIconSvg!);
+                 newElementsProps[elId]!.transform = existingProps[elId]?.transform || { translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotate: 0};
+              }
+              newElementsProps[elId]!.fill = colorValue; 
+              // Potentially also set stroke if design calls for it, or make it configurable.
+              // For now, mainly targeting fill.
+            }
+          });
+        }
+      });
+      
+      const newEditedIconSvg = applyElementPropertiesToSvg(state.originalIconSvg, newElementsProps);
+      
+      return { 
+        selectedPaletteName: paletteName,
+        elementsProps: newElementsProps,
+        editedIconSvg: newEditedIconSvg
+      };
+    });
+  },
+
+  updateTextProperty: (textType, property, value) => {
+    set((state) => {
+      const currentTextState = state[textType];
+      if (!currentTextState) return {};
+      
+      const newTextState = { ...currentTextState, [property]: value };
+      if (textType === 'companyName') {
+        return { companyName: newTextState };
+      } else if (textType === 'tagline') {
+        return { tagline: newTextState as TextProperties };
+      }
+      return {};
+    });
+  },
+
+  setTaglineEnabled: (enabled: boolean) => {
+    set(state => {
+      if (enabled && !state.tagline) {
+        const viewBox = state.originalIconSvg ? getViewBox(state.originalIconSvg) : { x: 0, y: 0, width: 100, height: 100 };
+        const taglineY = (viewBox?.y ?? 0) + (viewBox?.height ?? 100) * 0.95;
+        return { tagline: initialTextProps("Your awesome tagline", taglineY) };
+      } else if (!enabled) {
+        return { tagline: null };
+      }
+      return {};
+    });
+  },
+
+  // ViewBox management functions
+  setCurrentViewBox: (viewBox: ViewBox) => {
+    set({ currentViewBox: viewBox });
+  },
+
+  setZoomLevel: (zoomLevel: number) => {
+    set({ zoomLevel });
+  },
+
+  resetViewToDefault: () => {
+    const { originalIconSvg } = get();
+    if (originalIconSvg) {
+      const defaultViewBox = getViewBox(originalIconSvg) || { x: 0, y: 0, width: 100, height: 100 };
+      set({ 
+        currentViewBox: defaultViewBox,
+        zoomLevel: 1
+      });
+    }
+  },
+
+  getFinalSvgForExport: () => {
+    try {
+      const { editedIconSvg, companyName, tagline } = get();
+      if (!editedIconSvg) return "";
+
+      // Create cache key without including the entire objects to avoid serialization issues
+      let cacheKey = "svg_";
+      
+      // Basic implementation of simple hash for cache key
+      if (companyName) {
+        cacheKey += `c_${companyName.content}_${companyName.fontFamily}_${companyName.fontSize}_${companyName.fill}_${companyName.textAnchor}_${companyName.x}_${companyName.y}`;
+      } else {
+        cacheKey += "c_none";
+      }
+      
+      if (tagline) {
+        cacheKey += `t_${tagline.content}_${tagline.fontFamily}_${tagline.fontSize}_${tagline.fill}_${tagline.textAnchor}_${tagline.x}_${tagline.y}`;
+      } else {
+        cacheKey += "t_none";
+      }
+      
+      cacheKey += `_icon_${editedIconSvg.length}`;
+      
+      // Create a stable cache mechanism
+      if (typeof window !== 'undefined') {
+        if (!(window as any)._svgCache) (window as any)._svgCache = {};
+        if (!(window as any)._svgCache[cacheKey]) {
+          // Only create the array once with the existing objects
+          const textElements: TextProperties[] = [];
+          if (companyName) textElements.push(companyName);
+          if (tagline) textElements.push(tagline);
+          
+          (window as any)._svgCache[cacheKey] = addTextElementsToSvg(editedIconSvg, textElements);
+          
+          // Limit cache size to prevent memory leaks
+          const cacheKeys = Object.keys((window as any)._svgCache);
+          if (cacheKeys.length > 20) { // Keep only last 20 renderings
+            delete (window as any)._svgCache[cacheKeys[0]];
+          }
+        }
+        
+        return (window as any)._svgCache[cacheKey];
+      }
+      
+      // Fallback if window is not defined or cache fails
+      const textElements: TextProperties[] = [];
+      if (companyName) textElements.push(companyName);
+      if (tagline) textElements.push(tagline);
+      return addTextElementsToSvg(editedIconSvg, textElements);
+    } catch (error) {
+      console.error('Error generating SVG for export:', error);
+      return '<svg width="200" height="200" viewBox="0 0 100 100"><text x="50" y="50" text-anchor="middle" fill="red">Error rendering SVG</text></svg>';
+    }
+  },
+
+}));
+
+// Initialize with default templates and palettes
+useLogoStore.getState().loadTemplates(SVG_TEMPLATES);
+const initialPaletteName = useLogoStore.getState().selectedPaletteName;
+if (initialPaletteName) {
+ // Apply default palette on init if a template was auto-selected or for general setup.
+ // This might be better done after a template is explicitly selected.
+ // For now, we just ensure selectedPaletteName is set.
+}
+
+
+export { useLogoStore };
+
+
+--- [8] types.ts ---
+export enum Screen {
+  TemplateSelection = 'TemplateSelection',
+  Editor = 'Editor',
+  Typography = 'Typography',
+  Export = 'Export',
+}
+
+export interface SVGTemplate {
+  id: string;
+  name: string;
+  category: string; // e.g., "angular", "curved", "minimalist"
+  svgContent: string; // Raw SVG string
+}
+
+export interface SVGElementProperties {
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  opacity: number;
+  transform: {
+    translateX: number;
+    translateY: number;
+    scaleX: number;
+    scaleY: number;
+    rotate: number;
+  };
+}
+
+export interface ColorPalette {
+  name: string;
+  colors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    neutral?: string; // Optional neutral color
+  };
+}
+
+export interface TextProperties {
+  content: string;
+  fontFamily: string;
+  fontSize: number;
+  fill: string;
+  x: number;
+  y: number;
+  textAnchor: 'start' | 'middle' | 'end';
+}
+
+export interface ViewBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface LogoProjectState {
+  currentScreen: Screen;
+  templates: SVGTemplate[];
+  selectedTemplateId: string | null;
+  
+  originalIconSvg: string | null; // Original SVG of the selected template icon
+  editedIconSvg: string | null; // Icon SVG after element property modifications
+  
+  elementsProps: Record<string, Partial<SVGElementProperties>>; // id -> properties
+  selectedElementId: string | null;
+  
+  globalPalettes: ColorPalette[];
+  selectedPaletteName: string | null;
+
+  companyName: TextProperties;
+  tagline: TextProperties | null;
+  
+  // ViewBox state para navegação
+  currentViewBox: ViewBox | null;
+  zoomLevel: number;
+
+  // Actions principais
+  setScreen: (screen: Screen) => void;
+  loadTemplates: (templates: SVGTemplate[]) => void;
+  selectTemplate: (templateId: string) => void;
+  setSelectedElementId: (elementId: string | null) => void;
+  updateElementProperty: (elementId: string, propertyPath: string, value: any) => void;
+  applyGlobalPalette: (paletteName: string) => void;
+  updateTextProperty: (
+    textType: 'companyName' | 'tagline',
+    property: keyof TextProperties,
+    value: any
+  ) => void;
+  setTaglineEnabled: (enabled: boolean) => void;
+  getFinalSvgForExport: () => string;
+
+  // ViewBox/Zoom actions
+  setCurrentViewBox: (viewBox: ViewBox) => void;
+  setZoomLevel: (zoom: number) => void;
+}
+
+// Map element classes to palette color keys
+export const PALETTE_CLASS_MAP: Record<string, keyof ColorPalette['colors']> = {
+  'primary-color-element': 'primary',
+  'secondary-color-element': 'secondary',
+  'accent-color-element': 'accent',
+  'neutral-color-element': 'neutral',
+};
+
+
+--- [9] utils/exportUtils.ts ---
+import { DEFAULT_SVG_EXPORT_WIDTH, DEFAULT_SVG_EXPORT_HEIGHT } from "../constants";
+
+/**
+ * Calcula o bounding box real de todos os elementos SVG (incluindo textos e ícones) e ajusta o viewBox
+ * para garantir que nada seja cortado na exportação. Adiciona uma margem automática.
+ */
+function getFullContentBounds(svgDoc: Document, paddingMin = 5, paddingMax = 20, paddingPercent = 0.05) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const allElements = Array.from(svgDoc.querySelectorAll('*'));
+
+  allElements.forEach(el => {
+    // Ignora elementos sem representação visual
+    if (el.tagName === 'defs' || el.tagName === 'style') return;
+    try {
+      const bbox = (el as SVGGraphicsElement).getBBox?.();
+      if (bbox && bbox.width > 0 && bbox.height > 0) {
+        minX = Math.min(minX, bbox.x);
+        minY = Math.min(minY, bbox.y);
+        maxX = Math.max(maxX, bbox.x + bbox.width);
+        maxY = Math.max(maxY, bbox.y + bbox.height);
+      }
+    } catch {
+      // ignora erros de elementos sem getBBox
+    }
+  });
+
+  // fallback para viewBox ou defaults
+  if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    return null;
+  }
+
+  // margem automática
+  const padding = Math.max(paddingMin, Math.min((maxX - minX) * paddingPercent, paddingMax));
+  return {
+    minX: minX - padding,
+    minY: minY - padding,
+    width: (maxX - minX) + 2 * padding,
+    height: (maxY - minY) + 2 * padding,
+  };
+}
+
+export const downloadSVG = (svgString: string, filename: string): void => {
+  const parser = new DOMParser();
+  const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+  const svgElement = svgDoc.documentElement;
+
+  // Calcula bounds reais
+  const bounds = getFullContentBounds(svgDoc);
+  if (bounds) {
+    svgElement.setAttribute('viewBox', `${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`);
+    svgElement.setAttribute('width', String(bounds.width));
+    svgElement.setAttribute('height', String(bounds.height));
+  } else {
+    // fallback para defaults
+    svgElement.setAttribute('viewBox', `0 0 ${DEFAULT_SVG_EXPORT_WIDTH} ${DEFAULT_SVG_EXPORT_HEIGHT}`);
+    svgElement.setAttribute('width', String(DEFAULT_SVG_EXPORT_WIDTH));
+    svgElement.setAttribute('height', String(DEFAULT_SVG_EXPORT_HEIGHT));
+  }
+
+  const finalSvgString = new XMLSerializer().serializeToString(svgElement);
+
+  const blob = new Blob([finalSvgString], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+export const downloadPNG = (
+  svgString: string,
+  filename: string,
+  resolutionFactor: number = 1,
+  baseWidth: number = DEFAULT_SVG_EXPORT_WIDTH,
+  baseHeight: number = DEFAULT_SVG_EXPORT_HEIGHT
+): void => {
+  const parser = new DOMParser();
+  const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+  const svgElement = svgDoc.documentElement;
+
+  // Calcula bounds reais
+  const bounds = getFullContentBounds(svgDoc);
+  let width = baseWidth, height = baseHeight, minX = 0, minY = 0;
+  if (bounds) {
+    minX = bounds.minX;
+    minY = bounds.minY;
+    width = bounds.width;
+    height = bounds.height;
+    svgElement.setAttribute('viewBox', `${minX} ${minY} ${width} ${height}`);
+    svgElement.setAttribute('width', String(width));
+    svgElement.setAttribute('height', String(height));
+  } else {
+    svgElement.setAttribute('viewBox', `0 0 ${baseWidth} ${baseHeight}`);
+    svgElement.setAttribute('width', String(baseWidth));
+    svgElement.setAttribute('height', String(baseHeight));
+  }
+
+  const updatedSvgString = new XMLSerializer().serializeToString(svgElement);
+
+  const img = new Image();
+  const svgBlob = new Blob([updatedSvgString], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(svgBlob);
+
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    const actualWidth = width * resolutionFactor;
+    const actualHeight = height * resolutionFactor;
+
+    canvas.width = actualWidth;
+    canvas.height = actualHeight;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      console.error('Failed to get canvas context');
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    ctx.drawImage(img, 0, 0, actualWidth, actualHeight);
+    URL.revokeObjectURL(url);
+
+    const pngUrl = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = pngUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  img.onerror = (e) => {
+    console.error('Error loading SVG image for PNG conversion:', e);
+    URL.revokeObjectURL(url);
+  };
+
+  img.src = url;
+};
+
+/**
+ * Exporta o SVG ajustando o viewBox para englobar todo o conteúdo visível, com margem.
+ * Garante que nada do logo (ícone ou texto) seja cortado.
+ */
+export function getExportedSVG(svgString: string): string {
+  const parser = new DOMParser();
+  const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+  const svgElement = svgDoc.documentElement;
+
+  const bounds = getFullContentBounds(svgDoc);
+  if (bounds) {
+    svgElement.setAttribute('viewBox', `${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`);
+    svgElement.setAttribute('width', String(bounds.width));
+    svgElement.setAttribute('height', String(bounds.height));
+  } else {
+    svgElement.setAttribute('viewBox', `0 0 ${DEFAULT_SVG_EXPORT_WIDTH} ${DEFAULT_SVG_EXPORT_HEIGHT}`);
+    svgElement.setAttribute('width', String(DEFAULT_SVG_EXPORT_WIDTH));
+    svgElement.setAttribute('height', String(DEFAULT_SVG_EXPORT_HEIGHT));
+  }
+
+  return new XMLSerializer().serializeToString(svgElement);
+}
+
+/**
+ * Exporta o PNG ajustando o viewBox para englobar todo o conteúdo visível, com margem.
+ * Garante que nada do logo (ícone ou texto) seja cortado.
+ */
+export function getExportedPNG(
+  svgString: string,
+  resolutionFactor: number = 1,
+  baseWidth: number = DEFAULT_SVG_EXPORT_WIDTH,
+  baseHeight: number = DEFAULT_SVG_EXPORT_HEIGHT
+): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const parser = new DOMParser();
+    const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+    const svgElement = svgDoc.documentElement;
+
+    const bounds = getFullContentBounds(svgDoc);
+    let width = baseWidth, height = baseHeight, minX = 0, minY = 0;
+    if (bounds) {
+      minX = bounds.minX;
+      minY = bounds.minY;
+      width = bounds.width;
+      height = bounds.height;
+      svgElement.setAttribute('viewBox', `${minX} ${minY} ${width} ${height}`);
+      svgElement.setAttribute('width', String(width));
+      svgElement.setAttribute('height', String(height));
+    } else {
+      svgElement.setAttribute('viewBox', `0 0 ${baseWidth} ${baseHeight}`);
+      svgElement.setAttribute('width', String(baseWidth));
+      svgElement.setAttribute('height', String(baseHeight));
+    }
+
+    const updatedSvgString = new XMLSerializer().serializeToString(svgElement);
+
+    const img = new Image();
+    const svgBlob = new Blob([updatedSvgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const actualWidth = width * resolutionFactor;
+      const actualHeight = height * resolutionFactor;
+
+      canvas.width = actualWidth;
+      canvas.height = actualHeight;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        reject(new Error('Failed to get canvas context'));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, actualWidth, actualHeight);
+      URL.revokeObjectURL(url);
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Failed to export PNG'));
+        }
+      }, 'image/png');
+    };
+
+    img.onerror = (e) => {
+      URL.revokeObjectURL(url);
+      reject(e);
+    };
+
+    img.src = url;
+  });
+}
+
+
+--- [10] utils/svgUtils.ts ---
+import { SVGElementProperties, TextProperties, ColorPalette } from '../types';
+import { SVG_EDITABLE_CLASS, DEFAULT_FILL_COLOR } from '../constants';
+
+// Helper to parse transform string; very basic, assumes order or specific formats.
+// A robust solution would use regex or a micro-parser.
+const parseTransform = (transformStr: string | null): SVGElementProperties['transform'] => {
+  const transform: SVGElementProperties['transform'] = {
+    translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotate: 0
+  };
+  if (!transformStr) return transform;
+
+  const translateMatch = transformStr.match(/translate\(\s*([-\d.]+)\s*,?\s*([-\d.]+)\s*\)/);
+  if (translateMatch) {
+    transform.translateX = parseFloat(translateMatch[1]);
+    transform.translateY = parseFloat(translateMatch[2]);
+  }
+  
+  // Match scale(sX, sY) or scale(s)
+  const scaleMatch = transformStr.match(/scale\(\s*([-\d.]+)\s*(?:,\s*([-\d.]+))?\s*\)/);
+  if (scaleMatch) {
+    transform.scaleX = parseFloat(scaleMatch[1]);
+    transform.scaleY = scaleMatch[2] ? parseFloat(scaleMatch[2]) : parseFloat(scaleMatch[1]); // If sY is not present, use sX
+  }
+
+  const rotateMatch = transformStr.match(/rotate\(\s*([-\d.]+)(?:\s*([-\d.]+)\s*([-\d.]+))?\s*\)/); // rotate(angle cx cy) or rotate(angle)
+  if (rotateMatch) {
+    transform.rotate = parseFloat(rotateMatch[1]);
+    // cx, cy for rotate are not handled by this simple version.
+  }
+  return transform;
+};
+
+const formatTransform = (transform: Partial<SVGElementProperties['transform']>): string => {
+  let result = '';
+  if (transform.translateX !== undefined || transform.translateY !== undefined) {
+    result += `translate(${transform.translateX || 0} ${transform.translateY || 0}) `;
+  }
+  if (transform.scaleX !== undefined || transform.scaleY !== undefined) {
+     // SVG standard: scale(x y), if y is not provided, it's equal to x.
+    const scaleX = transform.scaleX ?? 1;
+    const scaleY = transform.scaleY ?? scaleX; // if scaleY is undefined, use scaleX
+    result += `scale(${scaleX} ${scaleY}) `;
+  }
+  if (transform.rotate !== undefined) {
+    result += `rotate(${transform.rotate || 0}) `;
+  }
+  return result.trim();
+};
+
+export const extractInitialElementsProperties = (svgString: string): Record<string, Partial<SVGElementProperties>> => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgString, "image/svg+xml");
+  const elements = doc.querySelectorAll(`.${SVG_EDITABLE_CLASS}`);
+  const props: Record<string, Partial<SVGElementProperties>> = {};
+
+  elements.forEach(el => {
+    if (el instanceof SVGElement && el.id) {
+      props[el.id] = {
+        fill: el.getAttribute('fill') || DEFAULT_FILL_COLOR,
+        stroke: el.getAttribute('stroke') || 'none',
+        strokeWidth: parseFloat(el.getAttribute('stroke-width') || '0'),
+        opacity: parseFloat(el.getAttribute('opacity') || '1'),
+        transform: parseTransform(el.getAttribute('transform')),
+      };
+    }
+  });
+  return props;
+};
+
+export const applyElementPropertiesToSvg = (
+  originalSvgString: string,
+  allElementsProps: Record<string, Partial<SVGElementProperties>>
+): string => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(originalSvgString, "image/svg+xml");
+
+  Object.entries(allElementsProps).forEach(([id, propsToApply]) => {
+    const element = doc.getElementById(id);
+    if (element) {
+      if (propsToApply.fill !== undefined) element.setAttribute('fill', propsToApply.fill);
+      if (propsToApply.stroke !== undefined) element.setAttribute('stroke', propsToApply.stroke);
+      if (propsToApply.strokeWidth !== undefined) element.setAttribute('stroke-width', String(propsToApply.strokeWidth));
+      if (propsToApply.opacity !== undefined) element.setAttribute('opacity', String(propsToApply.opacity));
+      if (propsToApply.transform !== undefined) {
+        const transformString = formatTransform(propsToApply.transform);
+        if (transformString) {
+          element.setAttribute('transform', transformString);
+        } else {
+          element.removeAttribute('transform');
+        }
+      }
+    }
+  });
+
+  const serializer = new XMLSerializer();
+  return serializer.serializeToString(doc.documentElement);
+};
+
+
+export const applyPaletteToSvgString = (
+  svgString: string,
+  palette: ColorPalette,
+  classMap: Record<string, keyof ColorPalette['colors']>
+): string => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgString, "image/svg+xml");
+
+  Object.entries(classMap).forEach(([className, colorKey]) => {
+    const elements = doc.querySelectorAll(`.${className}`);
+    const colorValue = palette.colors[colorKey];
+    if (colorValue) {
+      elements.forEach(el => {
+        if (el instanceof SVGElement) {
+          el.setAttribute('fill', colorValue);
+          // Optionally, could clear stroke or set it to a related color.
+        }
+      });
+    }
+  });
+
+  const serializer = new XMLSerializer();
+  return serializer.serializeToString(doc.documentElement);
+};
+
+export const addTextElementsToSvg = (svgString: string, textElementsConfig: TextProperties[]): string => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgString, "image/svg+xml");
+  const svgRoot = doc.documentElement;
+  
+  const viewBox = getViewBox(svgString) || { x:0, y:0, width:100, height:100 };
+
+  // Remove any existing text elements added by this function (e.g. with a specific class)
+  doc.querySelectorAll('.logo-text-element').forEach(el => el.remove());
+
+  textElementsConfig.forEach(config => {
+    if (!config.content.trim()) return; // Don't add empty text
+
+    const textEl = doc.createElementNS("http://www.w3.org/2000/svg", "text");
+    textEl.setAttribute('x', `${config.x}%`); // Use percentage for responsiveness within viewBox
+    textEl.setAttribute('y', `${config.y}%`);
+    textEl.setAttribute('font-family', config.fontFamily);
+    textEl.setAttribute('font-size', String(config.fontSize * (viewBox.width / 100) * 0.3)); // Scale font size relative to viewBox
+    textEl.setAttribute('fill', config.fill);
+    textEl.setAttribute('text-anchor', config.textAnchor);
+    textEl.classList.add('logo-text-element'); // Mark as added text
+    textEl.classList.add(SVG_EDITABLE_CLASS); // Make text editable too
+    textEl.id = `text-${config.content.substring(0,10).replace(/\s/g,'_')}-${Date.now()}` // basic unique id
+    textEl.textContent = config.content;
+    svgRoot.appendChild(textEl);
+  });
+
+  const serializer = new XMLSerializer();
+  return serializer.serializeToString(svgRoot);
+};
+
+export const getViewBox = (svgString: string): { x: number, y: number, width: number, height: number } | null => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgString, "image/svg+xml");
+    const svgRoot = doc.documentElement;
+    const viewBoxAttr = svgRoot.getAttribute('viewBox');
+    if (viewBoxAttr) {
+        const [x, y, width, height] = viewBoxAttr.split(/[\s,]+/).map(Number);
+        if ([x,y,width,height].every(v => !isNaN(v))) {
+            return { x, y, width, height };
+        }
+    }
+    return null;
+};
+
+export const applyTempHighlightToSvgElement = (svgString: string, elementId: string, styles: { stroke: string; strokeWidth: string, strokeDasharray?:string }): string => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgString, "image/svg+xml");
+  const element = doc.getElementById(elementId);
+  if (element) {
+    element.setAttribute('data-original-stroke', element.getAttribute('stroke') || 'none');
+    element.setAttribute('data-original-stroke-width', element.getAttribute('stroke-width') || '0');
+    element.setAttribute('data-original-stroke-dasharray', element.getAttribute('stroke-dasharray') || 'none');
+    
+    element.setAttribute('stroke', styles.stroke);
+    element.setAttribute('stroke-width', styles.strokeWidth);
+    if(styles.strokeDasharray) element.setAttribute('stroke-dasharray', styles.strokeDasharray);
+  }
+  const serializer = new XMLSerializer();
+  return serializer.serializeToString(doc.documentElement);
+};
+
+export const removeTempHighlightFromSvgElement = (svgString: string, elementId: string): string => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgString, "image/svg+xml");
+  const element = doc.getElementById(elementId);
+  if (element) {
+    const originalStroke = element.getAttribute('data-original-stroke');
+    const originalStrokeWidth = element.getAttribute('data-original-stroke-width');
+    const originalStrokeDasharray = element.getAttribute('data-original-stroke-dasharray');
+
+    if (originalStroke) element.setAttribute('stroke', originalStroke); else element.removeAttribute('stroke');
+    if (originalStrokeWidth) element.setAttribute('stroke-width', originalStrokeWidth); else element.removeAttribute('stroke-width');
+    if (originalStrokeDasharray && originalStrokeDasharray !== 'none') element.setAttribute('stroke-dasharray', originalStrokeDasharray); else element.removeAttribute('stroke-dasharray');
+
+    element.removeAttribute('data-original-stroke');
+    element.removeAttribute('data-original-stroke-width');
+    element.removeAttribute('data-original-stroke-dasharray');
+  }
+  const serializer = new XMLSerializer();
+  return serializer.serializeToString(doc.documentElement);
+};
+
+
+--- [11] src/ ---
+[Erro ao ler o arquivo: [Errno 13] Permission denied: 'src/']
+
+
